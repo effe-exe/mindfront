@@ -572,7 +572,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
       "say",
       {
         description:
-          "Say one or two punchy in-character sentences to the spectator feed. No game " +
+          "One short in-character line (under 15 words) for the spectator feed, only when your plan changes or something notable happens. No game " +
           "effect: this is the line the audience sees. Perform, do not explain.",
         inputSchema: { text: z.string().max(240) },
       },
