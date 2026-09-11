@@ -390,6 +390,15 @@ export class TransformHandler {
 
     const vpWidth = this.boundingRect().width;
     const vpHeight = this.boundingRect().height;
+    if (vpWidth === 0 || vpHeight === 0) {
+      // Canvas not laid out yet (spectators joining mid-game hit this):
+      // a 0-size viewport would set scale 0 and infinite offsets.
+      requestAnimationFrame(() => {
+        this.updateCanvasBoundingRect();
+        this.centerAll(fit);
+      });
+      return;
+    }
     const mapWidth = this.game.width();
     const mapHeight = this.game.height();
 

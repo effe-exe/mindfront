@@ -128,7 +128,8 @@ export const decide: Decide = async (ctx, obs, opts) => {
       body: JSON.stringify({
         model: ctx.model,
         temperature: 0.7,
-        max_tokens: 400,
+        max_tokens: 1500,
+        reasoning: { effort: "low" },
         messages: [
           { role: "system", content: systemPrompt(ctx) },
           { role: "user", content: JSON.stringify(obs) },
