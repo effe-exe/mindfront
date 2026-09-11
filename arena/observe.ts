@@ -99,8 +99,10 @@ export function observe(
 
   const gold = me.gold();
   const canBuild: { unit: BuildableUnit; cost: number }[] = [];
+  const buildCosts = {} as Record<BuildableUnit, number>;
   for (const unit of BUILDABLE_UNITS) {
     const cost = game.unitInfo(UNIT_MAP[unit]).cost(game, me);
+    buildCosts[unit] = Number(cost);
     if (cost <= gold) canBuild.push({ unit, cost: Number(cost) });
   }
 
@@ -142,6 +144,7 @@ export function observe(
     reachableByBoat,
     leaderboard,
     canBuild,
+    buildCosts,
     recentEvents: recentEvents.slice(-8),
     lastResult: ctx.lastResult,
     notes: ctx.notes,

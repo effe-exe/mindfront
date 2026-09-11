@@ -88,6 +88,8 @@ export interface Obs {
   leaderboard: { id: number; name: string; tiles: number }[];
   /** structures affordable right now */
   canBuild: { unit: BuildableUnit; cost: number }[];
+  /** current gold price of every structure, affordable or not */
+  buildCosts: Record<BuildableUnit, number>;
   /** last ≤8 human-readable events involving me */
   recentEvents: string[];
   lastResult: string;

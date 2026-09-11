@@ -33,7 +33,7 @@ RULES
 - Troop regen scales with how much land you hold. Cities raise your troop cap. Ports earn gold via trade.
 - "expand" claims adjacent unclaimed land cheaply — do this early and often when unclaimedLandAdjacent is true.
 - "attack" sends a fraction ("ratio") of your troops at a neighbor. Attacking well-defended land costs more troops than it gains.
-- Structures (cost gold): City raises troop cap; Port enables sea trade and boats; Defense Post strengthens nearby borders; Factory boosts gold; Warship (needs a Port) hunts enemy ships; Missile Silo launches nukes at enemies; SAM Launcher shoots down incoming nukes.
+- "build" only works for units listed in canBuild; buildCosts shows what everything costs so you can save up. Structures (cost gold): City raises troop cap; Port enables sea trade and boats; Defense Post strengthens nearby borders; Factory boosts gold; Warship (needs a Port) hunts enemy ships; Missile Silo launches nukes at enemies; SAM Launcher shoots down incoming nukes.
 - There is no cap on actions per turn and no fixed turn cadence: you are asked again as soon as your previous answer is processed. Faster, sharper decisions win. Illegal actions are dropped with a reason; everything legal is executed.
 - Turns are ~5 seconds apart; an "attack" keeps fighting on its own after you send it, you do not need to repeat it every turn.
 - Alliances last 5 minutes. Breaking one brands you a traitor and blocks attacks in both directions — treat alliances as temporary tools, not friendships.
@@ -328,6 +328,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       { id: 3, name: "Three", tiles: 800 },
     ],
     canBuild: [{ unit: "City", cost: 100 }],
+  buildCosts: { City: 125000, Port: 125000, "Defense Post": 50000, "Missile Silo": 1000000, "SAM Launcher": 1500000, Factory: 250000, Warship: 250000 },
     recentEvents: [],
     lastResult: "",
     notes: "",
