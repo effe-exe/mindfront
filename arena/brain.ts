@@ -144,6 +144,8 @@ interface Seat extends PlayerCtx {
   lastDecisionTick: number;
   /** last tick this seat sent an intent (MCP action or safety-net expand) */
   lastActionTick: number;
+  /** stops this seat's internal player loop (death, shutdown) */
+  abort: AbortController;
 }
 
 const seats: Seat[] = roster.map((r) => ({
@@ -167,6 +169,7 @@ const seats: Seat[] = roster.map((r) => ({
   drops: 0,
   errors: 0,
   lastActionTick: 0,
+  abort: new AbortController(),
 }));
 
 // ---------- lobby ----------
@@ -311,7 +314,6 @@ http
   .createServer((q, r) => void arena.handleHttp(q, r))
   .listen(flags.mcpPort, () => console.log(`mcp: ${mcpUrl}`));
 
-const playersAbort = new AbortController();
 let playersStarted = false;
 /** One MCP-client loop per internal seat; external seats bring their own agent. */
 function startPlayers() {
@@ -326,7 +328,7 @@ function startPlayers() {
       name: seat.name,
       persona: seat.persona,
       minGapMs: flags.interval * 100,
-      signal: playersAbort.signal,
+      signal: seat.abort.signal,
       onRound: (info) => {
         seat.latencyEma =
           seat.latencyEma === 0 ? info.latencyMs : seat.latencyEma * 0.7 + info.latencyMs * 0.3;
@@ -535,6 +537,7 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
       seat.life = "alive";
     } else if (seat.life === "alive") {
       seat.life = "dead";
+      seat.abort.abort();
       simEvent("death", `${seat.name} was eliminated`, [seat.name]);
     }
   }
@@ -585,7 +588,7 @@ function fallbackIntents(g: Game, me: Player): Intent[] {
 async function shutdown(reason: string) {
   if (finished) return;
   finished = true;
-  playersAbort.abort();
+  for (const s of seats) s.abort.abort();
   console.log(`ending: ${reason}`);
   clearInterval(pingTimer);
   clearTimeout(capTimer);
