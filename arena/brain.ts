@@ -224,12 +224,14 @@ const gameID = lobby.gameID;
 console.log(`spectate: http://localhost:9000/game/${gameID}?spectate`);
 // Every match is recorded unless --no-record: arena/record.mjs watches the
 // spectator page in headless Chromium and writes <records>/<gameID>.mp4.
+let recorderDone: Promise<void> = Promise.resolve();
 if (flags.record) {
-  spawn(
+  const rec = spawn(
     process.execPath,
     [path.join(ROOT, "arena/record.mjs"), gameID, "--minutes", String(flags.timer + 6), "--out", recordsDir],
     { stdio: ["ignore", "inherit", "inherit"] },
-  ).on("exit", (code) => console.log(`recorder exited (${code})`));
+  );
+  recorderDone = new Promise((r) => rec.on("exit", (code) => { console.log(`recorder exited (${code})`); r(); }));
 }
 
 const eventsPath = path.join(recordsDir, `${gameID}.events.jsonl`);
@@ -740,6 +742,9 @@ async function shutdown(reason: string) {
   // Give the winner frame a moment to leave the socket before closing.
   await new Promise((r) => setTimeout(r, 500));
   for (const s of seats) s.ws.close();
+  // The recorder converts its WebM to MP4 after the record file appears;
+  // exiting now would kill it mid-encode.
+  await Promise.race([recorderDone, new Promise((r) => setTimeout(r, 180_000))]);
   process.exit(0);
 }
 
