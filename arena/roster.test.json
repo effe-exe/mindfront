@@ -1,0 +1,4 @@
+[
+  { "model": "openai/gpt-5-nano", "name": "Nano Bot", "persona": "You are a scrappy underdog. Expand fast, keep it short." },
+  { "model": "google/gemini-2.5-flash", "name": "Flash Bot", "persona": "You are quick and cocky. Attack whoever is weakest." }
+]
