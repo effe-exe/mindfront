@@ -69,22 +69,25 @@ const UNIT_EFFECTS: Record<BuildableUnit, string> = {
   City: "Raises your troop cap by 250k per level; upgradable.",
   Port: "Enables sea trade gold and is required to launch boats and warships.",
   "Defense Post":
-    "Multiplies attacker losses x5 and slows them x3 on your tiles within range.",
-  "Missile Silo": "Launches nukes at enemy territory. 90 tick cooldown.",
-  "SAM Launcher": "Shoots down incoming nukes. 90 tick cooldown.",
-  Factory: "Boosts gold income and feeds the rail network.",
+    "Multiplies attacker losses x5 and slows them x3 on your tiles within 30 tiles of it.",
+  "Missile Silo":
+    "Holds one nuke per level, 90 tick cooldown — but there is no launch tool in this arena, so it is inert.",
+  "SAM Launcher":
+    "Shoots down incoming nukes within 70 tiles at level 1. 90 tick cooldown.",
+  Factory:
+    "No direct gold: it builds the rail network, and trains from it pay gold at every City or Port they stop at.",
   Warship:
-    "Needs a Port. Hunts enemy boats and trade ships, and shells the coast.",
+    "Needs a Port and a water tile, so the build tool cannot currently place one. Hunts enemy boats and trade ships.",
 };
 
 const ATTACK_MATH = [
   "An attack you send keeps eating tiles on its own until its troops run out or you retreat.",
-  "Troops sent: the ratio you pass, capped at 60% of your army. A boat carries a fifth of your army.",
+  "Troops sent: the ratio you pass, clamped to 5-60% of your army. A boat carries the same share.",
   "Per tile taken, the DEFENDER loses its average troops-per-tile (their army / their tiles). Thin, sprawling empires are cheap to eat; small dense ones are not.",
   "Per tile taken, YOU lose roughly terrain x how outnumbered you are x (a base cost + the defender's troop density). Send a big enough stack and the per-tile cost drops to its floor; send a small one into a big army and it climbs.",
   "Terrain multiplies both cost and speed: plains cheapest, highland ~25% worse, mountain ~50% worse.",
   "A Defense Post covering the tile multiplies your losses x5 and your time-per-tile x3.",
-  "Fallout from a nuke multiplies losses and slowness by 2.5-5x.",
+  "Fallout from a nuke multiplies losses and slowness by 3-5x.",
   "A traitor defends worse (recently broke an alliance), and bots die much more easily to humans and nations.",
   "Big territories are cheaper and faster to attack from AND into; the attacker's bonus is the bigger one.",
   "Speed: each tick your attack spends a budget proportional to its border width, so a wide front advances faster than a narrow one.",
@@ -298,7 +301,9 @@ export function createArenaServer(opts: ArenaServerOpts): {
       "rules",
       {
         description:
-          "The full MindFront briefing: how the game works and how to win.",
+          "The full MindFront game manual: goal and win rules, the clock, troop " +
+          "and gold economy, how attacks resolve, sea and structures, diplomacy, " +
+          "every tool, and how to read your observation.",
         inputSchema: {},
       },
       wrap("rules", () => ({ ok: true, text: opts.rules })),
@@ -510,18 +515,19 @@ export function createArenaServer(opts: ArenaServerOpts): {
 
     action(
       "break_alliance",
-      "Break an alliance. Brands you a traitor. Only ids in observe.me.allies.",
+      "Break an alliance. Brands you a traitor for 30 seconds: attackers take half " +
+        "losses against you and tribes hunt you. Only ids in observe.me.allies.",
       { target: z.number().int() },
       (a) => ({ type: "break_alliance", target: a.target as number }),
     );
 
     action(
       "build",
-      "Build a structure with gold. City raises your troop cap; Port enables sea trade " +
-        "and boats; Defense Post strengthens nearby borders; Factory boosts gold; " +
-        "Warship (needs a Port) hunts enemy ships; Missile Silo launches nukes; SAM " +
-        "Launcher shoots incoming nukes down. Only units listed in observe.canBuild are " +
-        "affordable right now; observe.buildCosts shows every price so you can save up.",
+      "Build a structure with gold. City raises your troop cap; Port earns trade gold; " +
+        "Defense Post strengthens nearby borders; Factory builds rail and trains that " +
+        "earn gold; SAM Launcher shoots incoming nukes down. See game_info for what " +
+        "each one does and costs. Only units listed in observe.canBuild are affordable " +
+        "right now; observe.buildCosts shows every price so you can save up.",
       { unit: z.enum(BUILDABLE_UNITS) },
       (a) => ({ type: "build", unit: a.unit as Action["unit"] }),
     );
