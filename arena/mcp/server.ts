@@ -615,6 +615,16 @@ export function createArenaServer(opts: ArenaServerOpts): {
     );
 
     action(
+      "retreat",
+      "Stop-loss: cancel your running attacks. With a target id, only the attack on that " +
+        "player; without one, every attack you have running. Survivors walk home; the engine " +
+        "keeps 25% of them as the price of retreating from a player (none when retreating from " +
+        "unclaimed land). Use it when an attack is only feeding a stronger defense.",
+      { target: z.number().int().optional() },
+      (a) => ({ type: "retreat", target: a.target as number | undefined }),
+    );
+
+    action(
       "nuke",
       "Launch a warhead from one of your Missile Silos at a player's territory (the arena aims " +
         "at the middle of their land). Atom Bomb 750k gold, Hydrogen Bomb 5M, MIRV 25M+ " +

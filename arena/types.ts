@@ -193,6 +193,7 @@ export const ACTION_TYPES = [
   "emoji",
   "chat",
   "nuke",
+  "retreat",
   "wait",
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];

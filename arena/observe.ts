@@ -464,7 +464,7 @@ function resolveTarget(game: Game, id: number | undefined): Player | undefined {
 }
 
 /** Result of translating one action: either an intent to send, or a drop reason. */
-type Translated = { intent: Intent } | { reason: string };
+type Translated = { intent: Intent } | { intents: Intent[] } | { reason: string };
 
 function translate(game: Game, me: Player, action: Action): Translated {
   switch (action.type) {
@@ -628,6 +628,22 @@ function translate(game: Game, me: Player, action: Action): Translated {
       return { intent: { type: "build_unit", unit: unitType, tile } };
     }
 
+    case "retreat": {
+      // Cancel running attacks: against one target, or all of them when no target
+      // is given. Survivors walk home; the engine keeps 25% as the malus when the
+      // target is a player, nothing when it was unclaimed land.
+      const t = action.target === undefined ? null : resolveTarget(game, action.target);
+      if (action.target !== undefined && !t)
+        return { reason: `target ${action.target} does not exist` };
+      const ids = me
+        .outgoingAttacks()
+        .filter((a) => !a.retreating() && (t === null || a.target() === t))
+        .map((a) => a.id());
+      if (ids.length === 0)
+        return { reason: t === null ? "you have no attack running" : `no attack of yours is running against ${action.target}` };
+      return { intents: ids.map((attackID) => ({ type: "cancel_attack", attackID })) };
+    }
+
     case "nuke": {
       if (action.nuke === undefined) return { reason: "nuke needs a warhead type" };
       const t = resolveTarget(game, action.target);
@@ -719,6 +735,8 @@ export function toIntents(
       const result = translate(game, me, action);
       if ("intent" in result) {
         intents.push(result.intent);
+      } else if ("intents" in result) {
+        intents.push(...result.intents);
       } else {
         dropped.push({ action, reason: result.reason });
       }

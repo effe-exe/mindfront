@@ -44,7 +44,9 @@ that never attacked anyone. Gold buys structures; troops are never bought.
 to 0.05–0.6. An attack is a standing execution: once sent it eats tiles every tick on its own until its
 troops run out or its front has no tiles left (survivors then walk home). **Do not re-send it every turn.**
 Two of your attacks on the same target merge; an attack and a counter-attack between the same pair cancel
-troop-for-troop. There is no retreat tool.
+troop-for-troop. `retreat(target?)` cancels a running attack: the survivors walk home minus a 25% malus
+(`malusForRetreat`) when the target was a player, no malus when it was unclaimed land, and the attack
+becomes an ally's the moment an alliance forms. Cancel first the attacks that only feed a stronger defense.
 
 Per tile taken, the **defender** loses its army divided by its tile count — thin sprawling empires are cheap
 to eat, small dense ones are not. **You** lose
@@ -108,8 +110,8 @@ and a train pays gold at each City or Port it stops at — 35,000 at an ally's, 
 at your own, minus 5,000 per stop past the tenth, floored at 5,000 (`trainGold`) — to the train owner and the
 station owner alike. Upgrading costs the same as building the next one, with no level cap.
 
-Arena caveat: `build` picks the tile for you by scanning your own land (border tiles for Port and Defense
-Post). Because it never scans water, **Warship cannot currently be placed through the tool**.
+Arena note: `build` picks the tile for you — your own land for most structures, border tiles for Port and
+Defense Post, and water next to one of your Ports for a Warship.
 
 ## 7. Nuclear weapons
 
@@ -199,8 +201,8 @@ Every id you pass to a tool must come from an observation. Invented ids are reje
 Read-only: `rules` (this manual), `observe`, `inspect_player(id)`, `game_info` (map, clock, win rule,
 timers, costs, attack math), `map_overview(cols, rows)`. Spawn phase: `spawn(col, row)`. Actions: `expand(ratio)`, `attack(target, ratio)`,
 `boat(target, ratio)`, `ally(target)`, `accept_alliance(target)`, `reject_alliance(target)`,
-`break_alliance(target)`, `build(unit)`, `nuke(target, nuke)` (Atom Bomb, Hydrogen Bomb or MIRV from
-your silos), `emoji(emoji, target?)`, `chat(key, target)`, `say(text)`.
+`break_alliance(target)`, `build(unit)`, `retreat(target?)` (cancel running attacks), `nuke(target, nuke)`
+(Atom Bomb, Hydrogen Bomb or MIRV from your silos), `emoji(emoji, target?)`, `chat(key, target)`, `say(text)`.
 
 Every action validates against the live simulation and sends its intent immediately, returning `{ok:true}`
 or `{ok:false, reason}` — the reason names exactly what was wrong. There is **no cap on actions and no fixed
@@ -251,5 +253,23 @@ observation says otherwise.
 - **Diplomacy is a timer, not a friendship.** An alliance freezes a border for five minutes; use it to fight
   on one front at a time. Tribes accept every request. Betraying pays only when the gain is decisive, because
   traitor status makes you cheaper to attack for everyone and tribes will hunt you.
+- **Pick a spawn with a land exit.** Reject cells where the only way out is water or through another
+  player. Coast is worth having with a defensible interior behind it, not on its own. Read your first
+  neighbours as expanding away (ally or trade), parallel (agree a boundary), or toward you (troops, a
+  shorter front, a Defense Post).
+- **Watch the cap, not just the army.** At 80% of `maxTroops` you keep only a fifth of your potential
+  regen; when `troopsPct` climbs past that, spend troops or buy cap rather than sit.
+- **Buy the bottleneck.** Defense Post when one border is draining troops (30-tile cover), City when the
+  cap limits growth, Port or Factory once you have secure land for the route to survive, SAM only when a
+  rival owns a silo. Save when nothing removes a bottleneck; spend when a small purchase protects the
+  economy. Do not buy a second Port before the first trade route completes trips: the second costs double.
+- **Trade pays by distance.** A trade ship earns roughly 5,000 gold on a 100-tile route and over 100,000 on
+  a 600-tile one, but long routes cross more enemy water. Protect the route that completes trips.
+- **Stop-loss.** Every minute, list your running attacks; `retreat` the ones that only feed a stronger
+  defense. A retreat returns 75% of the survivors, so leave early rather than late.
+- **Let alliances expire on their own** when you want out: natural expiry costs nothing, breaking costs
+  30 seconds of traitor vulnerability (attacker losses ×0.5, faster tile capture) and the tribes' hostility.
+- **Minute-5 audit.** Is the main border covered? Are troops near the cap? Is a trade route completing?
+  What single purchase removes the current bottleneck?
 - **Nukes need an economy first.** A Missile Silo plus an Atom Bomb is 1.75M gold; that only happens with
   Ports, Factories and conquest loot behind it. A silo without the bomb budget is dead money.

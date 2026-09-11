@@ -275,6 +275,13 @@ export const sanitize: Sanitize = (decision, obs) => {
           reason = `target ${action.target} is not a known id`;
         }
         break;
+      case "retreat": {
+        const running = new Set(obs.me.outgoingAttacks.map((a) => a.to));
+        if (action.target !== undefined && !running.has(action.target)) {
+          reason = `no attack of yours is running against ${action.target}; running: [${[...running].join(",")}]`;
+        }
+        break;
+      }
       case "nuke":
         if (action.nuke === undefined) {
           reason = "nuke needs a warhead: Atom Bomb, Hydrogen Bomb or MIRV";
