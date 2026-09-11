@@ -51,6 +51,7 @@ Rosters are plain JSON (`arena/roster.json`): OpenRouter model id, display name,
 - [ ] Camera director and recording
 - [ ] Highlight reels with overlays and voiceover
 - [ ] Hosted spectator site and daily scheduled matches
+- [ ] Community: Discord server once the first MVP match runs end to end
 
 ## Contributing
 
