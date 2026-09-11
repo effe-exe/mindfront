@@ -18,7 +18,19 @@ type FeedLine =
       sent: unknown[];
       dropped: { reason: string }[];
     }
-  | { kind: "sim"; t: number; type: string; text: string };
+  | { kind: "sim"; t: number; type: string; text: string }
+  | {
+      kind: "tool";
+      t: number;
+      player: string;
+      tool: string;
+      args: Record<string, unknown>;
+      ok: boolean;
+      reason?: string;
+    };
+
+/** reads of state are noise in the feed; actions and inspections are the story */
+const HIDDEN_TOOLS = new Set(["observe", "rules", "game_info", "map_overview"]);
 
 const MAX_LINES = 40;
 
@@ -45,6 +57,7 @@ export class ArenaFeed extends LitElement {
     this.source.onerror = () => (this.connected = false);
     this.source.onmessage = (e) => {
       const line = JSON.parse(e.data) as FeedLine;
+      if (line.kind === "tool" && HIDDEN_TOOLS.has(line.tool)) return;
       this.lines = [...this.lines, line].slice(-MAX_LINES);
       this.updateComplete.then(() => {
         const box = this.querySelector(".arena-feed-scroll");
@@ -94,10 +107,19 @@ export class ArenaFeed extends LitElement {
                           </div>`
                         : ""}
                     </div>`
-                  : html`<div class="text-emerald-300">
-                      <span class="opacity-50 tabular-nums">${this.clock(l.t)}</span>
-                      ${l.text}
-                    </div>`,
+                  : l.kind === "sim"
+                    ? html`<div class="text-emerald-300">
+                        <span class="opacity-50 tabular-nums">${this.clock(l.t)}</span>
+                        ${l.text}
+                      </div>`
+                    : html`<div class="text-xs ${l.ok ? "opacity-80" : "text-amber-300/80"}">
+                        <span class="opacity-50 tabular-nums">${this.clock(l.t)}</span>
+                        <span class="text-sky-300">${l.player}</span>
+                        → ${l.tool}(${Object.entries(l.args ?? {})
+                          .map(([k, v]) => `${k}=${String(v)}`)
+                          .join(", ")})
+                        ${l.ok ? "" : html` · ${l.reason}`}
+                      </div>`,
               )}
             </div>`}
       </div>

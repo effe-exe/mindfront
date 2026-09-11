@@ -51,17 +51,10 @@ import {
   encodeClientMessage,
 } from "../src/core/ZbinWire";
 import { NodeGameMapLoader } from "../tests/perf/fullgame/NodeGameMapLoader";
-import { decide, sanitize } from "./decide";
-import { observe, toIntents } from "./observe";
-import {
-  DECIDE_TIMEOUT_MS,
-  DEFAULT_INTERVAL_TICKS,
-  Dropped,
-  EventLine,
-  FALLBACK_DECISION,
-  PlayerCtx,
-  RosterEntry,
-} from "./types";
+import { systemPrompt } from "./decide";
+import { createArenaServer, ToolLine } from "./mcp/server";
+import { runPlayer } from "./player";
+import { DEFAULT_INTERVAL_TICKS, EventLine, PlayerCtx, RosterEntry } from "./types";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -76,6 +69,7 @@ const flags = {
   timer: 40,
   recordsDir: "arena/records",
   noLlm: false,
+  mcpPort: 9200,
 };
 {
   const argv = process.argv.slice(2);
@@ -109,6 +103,9 @@ const flags = {
         break;
       case "--no-llm":
         flags.noLlm = true;
+        break;
+      case "--mcp-port":
+        flags.mcpPort = parseInt(next(), 10);
         break;
       default:
         throw new Error(`unknown argument: ${argv[i]}`);
@@ -144,6 +141,8 @@ interface Seat extends PlayerCtx {
   drops: number;
   errors: number;
   lastDecisionTick: number;
+  /** last tick this seat sent an intent (MCP action or safety-net expand) */
+  lastActionTick: number;
 }
 
 const seats: Seat[] = roster.map((r) => ({
@@ -166,6 +165,7 @@ const seats: Seat[] = roster.map((r) => ({
   decisions: 0,
   drops: 0,
   errors: 0,
+  lastActionTick: 0,
 }));
 
 // ---------- lobby ----------
@@ -235,12 +235,103 @@ http
   })
   .listen(feedPort, () => console.log(`feed: http://localhost:${feedPort}/feed/${gameID}`));
 
-function writeEvent(line: EventLine) {
+function writeEvent(line: EventLine | ToolLine) {
   const json = JSON.stringify(line, replacer);
   fs.appendFileSync(eventsPath, json + "\n");
   feedBuffer.push(json);
   if (feedBuffer.length > 300) feedBuffer.shift();
   for (const c of feedClients) c.write(`data: ${json}\n\n`);
+}
+
+// ---------- MCP: the surface every player (internal or external) plays through ----------
+
+const ACTION_TOOLS = new Set([
+  "expand", "attack", "boat", "ally", "accept_alliance", "reject_alliance",
+  "break_alliance", "build", "emoji", "chat",
+]);
+const mcpUrl = `http://localhost:${flags.mcpPort}/mcp`;
+fs.writeFileSync(
+  path.join(recordsDir, `${gameID}.seats.json`),
+  JSON.stringify(
+    seats.map((s) => ({ name: s.name, model: s.model, token: s.token, url: mcpUrl })),
+    null,
+    2,
+  ),
+);
+for (const s of seats) {
+  if (s.model === "external") console.log(`external seat "${s.name}": token ${s.token}`);
+}
+const arena = createArenaServer({
+  game: () => game,
+  rules: systemPrompt({ ...seats[0], persona: "" }),
+  seats: new Map(
+    seats.map((s) => [
+      s.token,
+      {
+        name: s.name,
+        model: s.model,
+        me: () => s.me,
+        ctx: s,
+        recentEvents: () => s.recentEvents,
+        send: (intent: Intent) => {
+          s.lastActionTick = game?.ticks() ?? 0;
+          send(s, { type: "intent", intent });
+        },
+        say: (text: string) =>
+          writeEvent({
+            kind: "decision",
+            t: game?.ticks() ?? 0,
+            player: s.name,
+            model: s.model,
+            latencyMs: 0,
+            intervalTicks: flags.interval,
+            fallback: false,
+            reasoning: text,
+            sent: [],
+            dropped: [],
+          }),
+      },
+    ]),
+  ),
+  onEvent: (line) => {
+    if (line.kind === "tool" && ACTION_TOOLS.has(line.tool)) {
+      const s = seats.find((x) => x.name === line.player);
+      if (s) line.ok ? s.decisions++ : s.drops++;
+      console.log(
+        `[t=${line.t}] ${line.player} → ${line.tool}(${JSON.stringify(line.args)}) ` +
+          (line.ok ? "ok" : `dropped: ${line.reason}`),
+      );
+    }
+    writeEvent(line);
+  },
+});
+http
+  .createServer((q, r) => void arena.handleHttp(q, r))
+  .listen(flags.mcpPort, () => console.log(`mcp: ${mcpUrl}`));
+
+const playersAbort = new AbortController();
+let playersStarted = false;
+/** One MCP-client loop per internal seat; external seats bring their own agent. */
+function startPlayers() {
+  playersStarted = true;
+  if (flags.noLlm) return;
+  for (const seat of seats) {
+    if (seat.model === "external") continue;
+    void runPlayer({
+      url: mcpUrl,
+      token: seat.token,
+      model: seat.model,
+      name: seat.name,
+      persona: seat.persona,
+      minGapMs: flags.interval * 100,
+      signal: playersAbort.signal,
+      onRound: (info) => {
+        seat.latencyEma =
+          seat.latencyEma === 0 ? info.latencyMs : seat.latencyEma * 0.7 + info.latencyMs * 0.3;
+        if (info.fallback) seat.errors++;
+      },
+    });
+  }
 }
 
 // ---------- game state ----------
@@ -463,12 +554,14 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     void shutdown("all LLM players dead");
     return;
   }
+  if (!playersStarted) startPlayers();
   for (const seat of seats) {
-    if (seat.pending || seat.me === null || !seat.me.isAlive()) continue;
-    if (gu.tick - seat.lastDecisionTick < flags.interval) continue;
-    seat.lastDecisionTick = gu.tick;
-    seat.pending = true;
-    void step(seat, g, seat.me, gu.tick);
+    if (seat.me === null || !seat.me.isAlive()) continue;
+    // Safety net: a seat that has not acted for 30 s still expands into free land.
+    if (gu.tick - seat.lastActionTick >= 300) {
+      seat.lastActionTick = gu.tick;
+      for (const intent of fallbackIntents(g, seat.me)) send(seat, { type: "intent", intent });
+    }
   }
 }
 
@@ -480,87 +573,12 @@ function fallbackIntents(g: Game, me: Player): Intent[] {
   return [{ type: "attack", targetID: null, troops: null }];
 }
 
-async function step(seat: Seat, g: Game, me: Player, tick: number) {
-  const started = Date.now();
-  let intents: Intent[] = [];
-  let dropped: Dropped[] = [];
-  let reasoning = FALLBACK_DECISION.reasoning;
-  let latencyMs = 0;
-  let fallback = true;
-  try {
-    if (flags.noLlm) throw new Error("--no-llm");
-    const obs = observe(g, me, seat, seat.recentEvents);
-    const out = await decide(seat, obs, { timeoutMs: DECIDE_TIMEOUT_MS });
-    latencyMs = out.latencyMs;
-    fallback = out.fallback;
-    reasoning = out.decision.reasoning;
-    const clean = sanitize(out.decision, obs);
-    const acted = toIntents(g, me, obs, clean.decision, seat);
-    intents = acted.intents;
-    dropped = [...clean.dropped, ...acted.dropped];
-    seat.notes = clean.decision.notes || seat.notes;
-  } catch (e) {
-    if (!flags.noLlm && seat.errors % 10 === 0) {
-      console.error(`[${seat.name}] pipeline failed, using fallback:`, e);
-    }
-    seat.errors++;
-    latencyMs = Date.now() - started;
-    intents = fallbackIntents(g, me);
-    dropped = [];
-    fallback = true;
-  }
-
-  // Guardrail 5: an all-dropped decision twice in a row forces the fallback.
-  if (intents.length === 0 && dropped.length > 0) {
-    seat.consecutiveDrops++;
-    if (seat.consecutiveDrops >= 2) {
-      console.warn(
-        `[${seat.name}] ${seat.consecutiveDrops} dropped decisions in a row, forcing fallback`,
-      );
-      intents = fallbackIntents(g, me);
-      seat.consecutiveDrops = 0;
-      fallback = true;
-    }
-  } else {
-    seat.consecutiveDrops = 0;
-  }
-
-  seat.latencyEma =
-    seat.latencyEma === 0 ? latencyMs : seat.latencyEma * 0.7 + latencyMs * 0.3;
-  seat.lastResult =
-    dropped.length === 0 ? "ok" : dropped.map((d) => d.reason).join("; ");
-  seat.decisions++;
-  seat.drops += dropped.length;
-
-  // Server rate limit is 10 intents/s per client: pace bursts at 8/s.
-  intents.forEach((intent, i) =>
-    setTimeout(() => send(seat, { type: "intent", intent }), Math.floor(i / 8) * 1000),
-  );
-
-  writeEvent({
-    kind: "decision",
-    t: tick,
-    player: seat.name,
-    model: seat.model,
-    latencyMs,
-    intervalTicks: seat.intervalTicks,
-    fallback,
-    reasoning,
-    sent: intents,
-    dropped,
-  });
-  console.log(
-    `[t=${tick}] ${seat.name} (${(latencyMs / 1000).toFixed(1)}s, int=${seat.intervalTicks}): ` +
-      `"${reasoning}" sent=${intents.length} dropped=${dropped.length}`,
-  );
-  seat.pending = false;
-}
-
 // ---------- exit ----------
 
 async function shutdown(reason: string) {
   if (finished) return;
   finished = true;
+  playersAbort.abort();
   console.log(`ending: ${reason}`);
   clearInterval(pingTimer);
   clearTimeout(capTimer);
