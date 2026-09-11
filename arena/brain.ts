@@ -53,6 +53,7 @@ import {
 import { NodeGameMapLoader } from "../tests/perf/fullgame/NodeGameMapLoader";
 import { systemPrompt } from "./decide";
 import { createArenaServer, ToolLine } from "./mcp/server";
+import { trackHistory } from "./observe";
 import { runPlayer } from "./player";
 import { DEFAULT_INTERVAL_TICKS, EventLine, PlayerCtx, RosterEntry } from "./types";
 
@@ -273,6 +274,7 @@ const arena = createArenaServer({
         me: () => s.me,
         ctx: s,
         recentEvents: () => s.recentEvents,
+        globalEvents: () => globalEvents,
         send: (intent: Intent) => {
           s.lastActionTick = game?.ticks() ?? 0;
           send(s, { type: "intent", intent });
@@ -352,8 +354,12 @@ function send(seat: Seat, msg: Parameters<typeof encodeClientMessage>[0]) {
   seat.ws.send(encodeClientMessage(msg, ctx));
 }
 
+/** last 10 notable events anyone can see (conquests, betrayals, nukes, deaths) */
+const globalEvents: string[] = [];
 function simEvent(type: string, text: string, players: string[]) {
   writeEvent({ kind: "sim", t: game?.ticks() ?? 0, type, text, players });
+  globalEvents.push(`t${game?.ticks() ?? 0} ${text}`);
+  if (globalEvents.length > 10) globalEvents.shift();
   for (const seat of seats) {
     if (!players.includes(seat.name)) continue;
     seat.recentEvents.push(text);
@@ -543,6 +549,7 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
   }
 
   if (gu.tick % 100 === 0) {
+    trackHistory(g);
     console.log(
       `[t=${gu.tick}] ` +
         seats.map((s) => `${s.name}=${s.me?.numTilesOwned() ?? 0}`).join(" "),
