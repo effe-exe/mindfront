@@ -201,3 +201,38 @@ Action items in Step 0: remove `proprietary/*` on the branch, verify the client 
 - 2026-09-11: guardrail cap was one move action per decision; match 2 showed 35–67 drops per 47 decisions from it and both LLMs lost to a tribe. Now: one expand PLUS one attack/boat per turn.
 - 2026-09-11: `isAlive()` is false before random spawn places a player; the brain tracks `unspawned | alive | dead` explicitly.
 - 2026-09-11: records and events are serialized with the repo's bigint-safe `replacer` from `src/core/Util.ts`.
+
+## Phase 1.5: MindFront MCP (decided 2026-09-11)
+
+Goal: the game becomes something any agent can plug into over the Model Context Protocol, so MindFront is a benchmark others can enter, not just our harness. Decisions: local first but remote-ready (Streamable HTTP on localhost, per-seat bearer token); our own OpenRouter players use the same MCP surface as external agents (parity); no action caps and no fixed cadence (speed of decision is part of the score).
+
+### Architecture
+```
+brain.ts (referee: owns the sim, validates, paces, logs, feeds spectators)
+  ├─ MCP server  http://localhost:9200/mcp   (arena/mcp/server.ts, @modelcontextprotocol/sdk, Streamable HTTP)
+  │     auth: Authorization: Bearer <seat token>; one seat = one game player
+  └─ internal players: arena/player.ts × N, generic MCP client driven by an OpenRouter model
+external agent: any MCP client with a seat token (Claude Desktop, Cursor, custom) → same server, same tools
+```
+
+### Tool surface (server; descriptions carry the rules)
+- `rules()` → briefing text (also resource `mindfront://rules`)
+- `observe()` → Obs JSON (from `observe.ts`), plus `turn_gap_ok: boolean`
+- `inspect_player(id)` → details for one visible player (tiles, troops, relation, alliances, coast, attacks in/out)
+- actions, each validated on the live sim with `sanitize` (referential) + `toIntents` (game-legal) and sent immediately; return `{ok:true}` or `{ok:false, reason}`:
+  `expand(ratio?)`, `attack(target, ratio?)`, `boat(target, ratio?)`, `ally(target)`, `accept_alliance(target)`, `reject_alliance(target)`, `break_alliance(target)`, `build(unit)`, `emoji(emoji, target?)`, `chat(key, target)`
+- `say(text)` → spectator feed only (the "reasoning" line), no game effect
+- Every tool call is an EventLine (`kind:"tool"`, seat, tool, args, result, latency) → events.jsonl + SSE feed
+
+### Seats
+- `arena/roster.json` entries get a `token` at match start (printed by brain, also written to `arena/records/<gameID>.seats.json`, gitignored). `model: "external"` = seat reserved for an outside agent; brain does not drive it.
+- Internal seats: brain starts one `player.ts` loop per seat in-process. Loop = `observe` → LLM with the MCP tools exposed as OpenAI-style tools → execute calls → repeat, min gap `--interval` ticks. Timeouts, 429s and garbage → skip this round, never crash.
+
+### Benchmark logging
+- Per seat per match: decisions, tool calls, illegal-call rate, mean latency, tiles over time, alliances made/broken, kills, death tick, final rank. Written into the record's player stats block and `events.jsonl`; leaderboard script later.
+
+### Packages
+- P1 `arena/mcp/server.ts` (Opus): server, auth, tools, EventLines, resource. Unit check: start against a headless game from `tests/util/Setup.ts` and call tools through the SDK's client with an in-memory transport.
+- P2 `arena/player.ts` (Sonnet): MCP-client loop for OpenRouter models; reuses `systemPrompt`. Self-check with a mocked LLM and the in-memory server.
+- P3 brain wiring (orchestrator): start server, mint tokens, replace the direct decide() loop with player loops, feed `kind:"tool"` lines; ArenaFeed renders tool lines.
+- Docs: README "Connect your own agent" with a 10-line example client.
