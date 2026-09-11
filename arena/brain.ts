@@ -648,6 +648,19 @@ function autoSpawn(g: Game) {
       const y = Math.floor(Math.random() * h);
       const t = g.ref(x, y);
       if (!g.isLand(t) || g.hasOwner(t)) continue;
+      // Room to grow: most of a 30-tile box around the spot must be free land,
+      // otherwise the farthest point from everyone is a rock in the ocean.
+      let free = 0;
+      for (let dy = -15; dy <= 15; dy += 5) {
+        for (let dx = -15; dx <= 15; dx += 5) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const nt = g.ref(nx, ny);
+          if (g.isLand(nt) && !g.hasOwner(nt)) free++;
+        }
+      }
+      if (free < 30) continue; // of 49 samples
       const d = taken.length === 0 ? 1 : Math.min(...taken.map(([tx, ty]) => Math.abs(tx - x) + Math.abs(ty - y)));
       if (d > bestD) {
         bestD = d;

@@ -180,7 +180,10 @@ theater, not a channel.
 - `neighbors[].allies`, `targets`, `attacking`, `attackedBy`, `isTraitor`, `betrayals` — who is busy, who is
   already besieged, who is safe to betray.
 - `unclaimedLandAdjacent` — whether `expand` is legal at all right now.
-- `reachableByBoat` — the only ids `boat` accepts: the three largest coastal players you do not border.
+- `reachableByBoat` — the only ids `boat` accepts: up to six coastal players you do not border, nearest first
+  (small ones included). If `freeLandAtBorder` is near zero and you have no neighbors, the sea is your only way out.
+- `me.freeLandAtBorder` — distinct unclaimed land tiles touching your border. Near zero means expand will
+  gain nothing: you are boxed in by rivals or sitting on an island.
 - `canBuild` / `buildCosts` / `build` — affordable now, the full price list, and per structure whether you can
   pay and whether a legal tile exists (a Port needs a coastal tile you own, a Warship needs a Port).
 - `nukes` — your Missile Silos, the current price of each warhead, and which you could launch right now.

@@ -368,6 +368,7 @@ if (
       id: 1,
       name: "Tester",
       tiles: 1000,
+      freeLandAtBorder: 40,
       landPct: 0.1,
       troops: 1000,
       gold: 500,
