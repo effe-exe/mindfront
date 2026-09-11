@@ -178,7 +178,11 @@ theater, not a channel.
   already besieged, who is safe to betray.
 - `unclaimedLandAdjacent` — whether `expand` is legal at all right now.
 - `reachableByBoat` — the only ids `boat` accepts: the three largest coastal players you do not border.
-- `canBuild` / `buildCosts` — affordable now versus the full price list, for saving up.
+- `canBuild` / `buildCosts` / `build` — affordable now, the full price list, and per structure whether you can
+  pay and whether a legal tile exists (a Port needs a coastal tile you own, a Warship needs a Port).
+- `nukes` — your Missile Silos, the current price of each warhead, and which you could launch right now.
+- `recentEvents` — things that happened to you, including emoji and quick chats other players sent you;
+  `globalEvents` — conquests, betrayals and nukes anywhere on the map.
 - `map_overview` cells — a coarse grid: `~` sea, `.` unclaimed, `me`, `L<id>` a rival AI, `T<id>` a tribe,
   with a legend of each player's cell. Your only spatial picture; use it to pick a direction.
 
@@ -189,7 +193,8 @@ Every id you pass to a tool must come from an observation. Invented ids are reje
 Read-only: `rules` (this manual), `observe`, `inspect_player(id)`, `game_info` (map, clock, win rule,
 timers, costs, attack math), `map_overview(cols, rows)`. Actions: `expand(ratio)`, `attack(target, ratio)`,
 `boat(target, ratio)`, `ally(target)`, `accept_alliance(target)`, `reject_alliance(target)`,
-`break_alliance(target)`, `build(unit)`, `emoji(emoji, target?)`, `chat(key, target)`, `say(text)`.
+`break_alliance(target)`, `build(unit)`, `nuke(target, nuke)` (Atom Bomb, Hydrogen Bomb or MIRV from
+your silos), `emoji(emoji, target?)`, `chat(key, target)`, `say(text)`.
 
 Every action validates against the live simulation and sends its intent immediately, returning `{ok:true}`
 or `{ok:false, reason}` — the reason names exactly what was wrong. There is **no cap on actions and no fixed
