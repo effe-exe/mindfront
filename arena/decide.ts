@@ -223,8 +223,12 @@ export const sanitize: Sanitize = (decision, obs) => {
         }
         break;
       case "ally":
-        if (action.target === undefined || !neighborIds.has(action.target)) {
-          reason = `target ${action.target} is not your neighbor; neighbors: [${[...neighborIds].join(",")}]`;
+        // The engine allows requests to anyone alive; the only requirement is that
+        // the id is one you can see this turn.
+        if (action.target === undefined || !knownIds.has(action.target)) {
+          reason = `target ${action.target} is not a visible player id`;
+        } else if (allyIds.has(action.target)) {
+          reason = `you are already allied with ${action.target}`;
         }
         break;
       case "boat":

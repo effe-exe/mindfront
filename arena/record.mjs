@@ -35,15 +35,10 @@ const page = await context.newPage();
 await page.goto(`http://localhost:9000/game/${gameID}?spectate`, { waitUntil: "load" });
 console.log(`recording ${gameID} for up to ${minutes} min`);
 
-const brainAlive = () => {
-  try {
-    return execFileSync("pgrep", ["-f", "arena/brain.ts"]).toString().trim() !== "";
-  } catch {
-    return false;
-  }
-};
+// The brain writes <gameID>.json when the match ends; that is the stop signal.
+const recordPath = path.join(outDir, `${gameID}.json`);
 const deadline = Date.now() + minutes * 60_000;
-while (Date.now() < deadline && brainAlive()) await new Promise((r) => setTimeout(r, 5000));
+while (Date.now() < deadline && !fs.existsSync(recordPath)) await new Promise((r) => setTimeout(r, 5000));
 await new Promise((r) => setTimeout(r, 3000)); // let the win modal show
 
 const video = page.video();

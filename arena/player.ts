@@ -125,6 +125,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
             model,
             max_tokens: 1500,
             reasoning: { effort: "low" },
+            // Only providers that honor tools/tool_choice; Llama was routed to one that did not.
+            provider: { require_parameters: true },
             messages,
             tools,
             tool_choice: "auto",
