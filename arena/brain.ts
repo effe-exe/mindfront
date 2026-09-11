@@ -54,7 +54,6 @@ import { NodeGameMapLoader } from "../tests/perf/fullgame/NodeGameMapLoader";
 import { decide, sanitize } from "./decide";
 import { observe, toIntents } from "./observe";
 import {
-  adaptiveInterval,
   DECIDE_TIMEOUT_MS,
   DEFAULT_INTERVAL_TICKS,
   Dropped,
@@ -156,6 +155,7 @@ const seats: Seat[] = roster.map((r) => ({
   lastResult: "",
   latencyEma: 0,
   intervalTicks: flags.interval,
+  lastDecisionTick: 0,
   pending: false,
   consecutiveDrops: 0,
   sawLobbyInfo: false,
@@ -464,7 +464,8 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
   }
   for (const seat of seats) {
     if (seat.pending || seat.me === null || !seat.me.isAlive()) continue;
-    if (gu.tick % seat.intervalTicks !== 0) continue;
+    if (gu.tick - seat.lastDecisionTick < flags.interval) continue;
+    seat.lastDecisionTick = gu.tick;
     seat.pending = true;
     void step(seat, g, seat.me, gu.tick);
   }
@@ -525,13 +526,15 @@ async function step(seat: Seat, g: Game, me: Player, tick: number) {
 
   seat.latencyEma =
     seat.latencyEma === 0 ? latencyMs : seat.latencyEma * 0.7 + latencyMs * 0.3;
-  seat.intervalTicks = adaptiveInterval(flags.interval, seat.latencyEma);
   seat.lastResult =
     dropped.length === 0 ? "ok" : dropped.map((d) => d.reason).join("; ");
   seat.decisions++;
   seat.drops += dropped.length;
 
-  for (const intent of intents) send(seat, { type: "intent", intent });
+  // Server rate limit is 10 intents/s per client: pace bursts at 8/s.
+  intents.forEach((intent, i) =>
+    setTimeout(() => send(seat, { type: "intent", intent }), Math.floor(i / 8) * 1000),
+  );
 
   writeEvent({
     kind: "decision",

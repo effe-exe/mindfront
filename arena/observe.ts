@@ -161,29 +161,6 @@ function resolveTarget(game: Game, id: number | undefined): Player | undefined {
   return p;
 }
 
-type Category = "expand" | "move" | "build" | "diplo" | "comm";
-
-function categoryOf(type: Action["type"]): Category | null {
-  switch (type) {
-    case "expand":
-      return "expand";
-    case "attack":
-    case "boat":
-      return "move";
-    case "build":
-      return "build";
-    case "ally":
-    case "accept_alliance":
-    case "reject_alliance":
-    case "break_alliance":
-      return "diplo";
-    case "emoji":
-    case "chat":
-      return "comm";
-    default:
-      return null; // wait
-  }
-}
 
 /** Result of translating one action: either an intent to send, or a drop reason. */
 type Translated = { intent: Intent } | { reason: string };
@@ -326,19 +303,9 @@ export function toIntents(
 ): ActResult {
   const intents: Intent[] = [];
   const dropped: Dropped[] = [];
-  const used = new Set<Category>();
 
   for (const action of decision.actions) {
     if (action.type === "wait") continue;
-
-    const cat = categoryOf(action.type);
-    if (cat !== null) {
-      if (used.has(cat)) {
-        dropped.push({ action, reason: `only one ${cat} action per turn; dropped extra ${action.type}` });
-        continue;
-      }
-      used.add(cat);
-    }
 
     try {
       const result = translate(game, me, action);

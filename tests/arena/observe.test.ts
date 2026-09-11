@@ -125,7 +125,7 @@ describe("arena/observe", () => {
     expect(intent.troops).toBeGreaterThan(0);
   });
 
-  test("caps two move actions (attack/expand/boat) to one per decision", () => {
+  test("no per-turn caps: two expands both become intents", () => {
     const obs = observe(game, player1, ctx(), []);
 
     const result = toIntents(
@@ -136,8 +136,7 @@ describe("arena/observe", () => {
       ctx(),
     );
 
-    expect(result.intents).toHaveLength(1);
-    expect(result.dropped).toHaveLength(1);
-    expect(result.dropped[0].reason).toMatch(/only one/);
+    expect(result.intents).toHaveLength(2);
+    expect(result.dropped).toHaveLength(0);
   });
 });

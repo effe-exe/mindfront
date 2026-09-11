@@ -34,7 +34,7 @@ RULES
 - "expand" claims adjacent unclaimed land cheaply — do this early and often when unclaimedLandAdjacent is true.
 - "attack" sends a fraction ("ratio") of your troops at a neighbor. Attacking well-defended land costs more troops than it gains.
 - Structures (cost gold): City raises troop cap; Port enables sea trade and boats; Defense Post strengthens nearby borders; Factory boosts gold; Warship (needs a Port) hunts enemy ships; Missile Silo launches nukes at enemies; SAM Launcher shoots down incoming nukes.
-- Per turn you get at most ONE expand, ONE attack or boat, ONE build, ONE diplomacy action and ONE emoji/chat. Extra actions of the same kind are dropped, so choose.
+- There is no cap on actions per turn and no fixed turn cadence: you are asked again as soon as your previous answer is processed. Faster, sharper decisions win. Illegal actions are dropped with a reason; everything legal is executed.
 - Turns are ~5 seconds apart; an "attack" keeps fighting on its own after you send it, you do not need to repeat it every turn.
 - Alliances last 5 minutes. Breaking one brands you a traitor and blocks attacks in both directions — treat alliances as temporary tools, not friendships.
 - Boats can strike non-adjacent coastal targets, at most 3 in flight at once.
@@ -48,7 +48,7 @@ PERSONA
 ${ctx.persona}
 
 OUTPUT
-Call the "act" tool exactly once. Return at most 3 actions. "reasoning" is 1-2 punchy in-character sentences shown live to spectators — perform, don't explain. "notes" is your private scratchpad, carried back to you next turn.
+Call the "act" tool exactly once with as many actions as you want. "reasoning" is 1-2 punchy in-character sentences shown live to spectators — perform, don't explain. "notes" is your private scratchpad, carried back to you next turn.
 Valid emoji: ${flattenedEmojiTable.join(",")}
 Valid chat keys: ${QUICK_CHAT_KEYS.join(",")}`;
 }
@@ -176,21 +176,6 @@ export const decide: Decide = async (ctx, obs, opts) => {
   }
 };
 
-type CapGroup = "expand" | "move" | "build" | "diplo" | "comm";
-function capGroup(type: Action["type"]): CapGroup | null {
-  if (type === "expand") return "expand";
-  if (type === "attack" || type === "boat") return "move";
-  if (type === "build") return "build";
-  if (
-    type === "ally" ||
-    type === "accept_alliance" ||
-    type === "reject_alliance" ||
-    type === "break_alliance"
-  )
-    return "diplo";
-  if (type === "emoji" || type === "chat") return "comm";
-  return null;
-}
 
 export const sanitize: Sanitize = (decision, obs) => {
   const dropped: { action: Action; reason: string }[] = [];
@@ -209,7 +194,6 @@ export const sanitize: Sanitize = (decision, obs) => {
     ...obs.me.incomingAttacks.map((a) => a.from),
   ]);
 
-  const seen: Record<CapGroup, boolean> = { expand: false, move: false, build: false, diplo: false, comm: false };
   const kept: Action[] = [];
 
   for (const original of decision.actions) {
@@ -277,14 +261,6 @@ export const sanitize: Sanitize = (decision, obs) => {
       continue;
     }
 
-    const group = capGroup(action.type);
-    if (group) {
-      if (seen[group]) {
-        dropped.push({ action, reason: `cap: one ${group} action per turn` });
-        continue;
-      }
-      seen[group] = true;
-    }
     kept.push(action);
   }
 
@@ -390,9 +366,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       ]),
       CANNED_OBS,
     );
-    assert.equal(decision.actions.length, 1, "only one attack/expand/boat action per turn");
-    assert.equal(dropped.length, 1);
-    assert.match(dropped[0].reason, /cap:/);
+    assert.equal(decision.actions.length, 2, "no per-turn action caps");
+    assert.equal(dropped.length, 0);
   }
   {
     const { decision } = sanitize(mk([{ type: "emoji", emoji: "🛸" }]), CANNED_OBS);

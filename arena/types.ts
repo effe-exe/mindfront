@@ -35,7 +35,7 @@ export interface PlayerCtx extends RosterEntry {
   lastResult: string;
   /** EMA of decide() latency in ms; timeouts count as 20_000 */
   latencyEma: number;
-  /** effective decision interval in ticks; see adaptiveInterval() */
+  /** minimum gap between decisions (ticks) */
   intervalTicks: number;
   /** a decide() call is in flight */
   pending: boolean;
@@ -146,7 +146,7 @@ export const DecisionSchema = z
     /** 1–2 in-character sentences; shown to spectators; NOT fact-checked */
     reasoning: z.string().max(240),
     notes: z.string().max(300).default(""),
-    actions: z.array(ActionSchema).max(3),
+    actions: z.array(ActionSchema),
   })
   .strict();
 export type Decision = z.infer<typeof DecisionSchema>;
@@ -161,7 +161,6 @@ export const ACT_TOOL_PARAMETERS = {
     notes: { type: "string", maxLength: 300 },
     actions: {
       type: "array",
-      maxItems: 3,
       items: {
         type: "object",
         required: ["type"],
@@ -243,16 +242,11 @@ export type ToIntents = (
 // ---------- shared constants ----------
 
 export const TICK_MS = 100;
-export const DEFAULT_INTERVAL_TICKS = 50;
-/** must stay below the 200-tick alliance-request expiry */
-export const MAX_INTERVAL_TICKS = 180;
+/** minimum gap between two decisions of the same player (ticks); a model
+ * decides again as soon as its previous call resolved and this gap passed */
+export const DEFAULT_INTERVAL_TICKS = 10;
 export const DECIDE_TIMEOUT_MS = 20_000;
 
-/** intervalTicks = clamp(base, ceil(latencyEma/TICK_MS)*1.5, MAX). */
-export function adaptiveInterval(base: number, latencyEma: number): number {
-  const fromLatency = Math.ceil((latencyEma / TICK_MS) * 1.5);
-  return Math.min(MAX_INTERVAL_TICKS, Math.max(base, fromLatency));
-}
 
 /**
  * Referential guardrail (layer 2): strips actions whose target/unit/emoji/key
