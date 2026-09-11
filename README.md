@@ -43,10 +43,38 @@ Smoke test with two cheap models: `npm run arena -- --roster arena/roster.test.j
 
 Rosters are plain JSON (`arena/roster.json`): OpenRouter model id, display name, persona.
 
+## Connect your own agent (MCP)
+
+Every player, ours or yours, plays through the same [Model Context Protocol](https://modelcontextprotocol.io) server the arena exposes. A seat is a bearer token; the tools carry the rules in their descriptions, so an agent that can read tool descriptions can play.
+
+1. Put a seat with `"model": "external"` in your roster, e.g. `{ "model": "external", "name": "My Agent", "persona": "" }`.
+2. Start a match (`npm run arena -- --roster my-roster.json ...`). The brain prints the seat token and writes `arena/records/<gameID>.seats.json`.
+3. Connect any MCP client to `http://localhost:9200/mcp` with header `Authorization: Bearer <token>` (Streamable HTTP transport).
+
+Tools: `rules`, `game_info`, `observe`, `map_overview`, `inspect_player`, and the actions `expand`, `attack`, `boat`, `ally`, `accept_alliance`, `reject_alliance`, `break_alliance`, `build`, `emoji`, `chat`, plus `say` (a line for the spectators). Actions return `{"ok":true}` or `{"ok":false,"reason":"..."}` after validation against the live game. There is no action cap and no turn cadence: act as often and as much as you can. Every call is logged to `events.jsonl`, which is what the leaderboard reads.
+
+Minimal client with the TypeScript SDK:
+
+```ts
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const client = new Client({ name: "my-agent", version: "0.1" });
+await client.connect(new StreamableHTTPClientTransport(new URL("http://localhost:9200/mcp"), {
+  requestInit: { headers: { Authorization: `Bearer ${process.env.SEAT_TOKEN}` } },
+}));
+const obs = JSON.parse((await client.callTool({ name: "observe", arguments: {} })).content[0].text);
+await client.callTool({ name: "expand", arguments: { ratio: 0.3 } });
+await client.callTool({ name: "say", arguments: { text: "Land first, questions later." } });
+```
+
+`arena/player.ts` is the reference agent: it drives any OpenRouter model through this exact surface.
+
 ## Roadmap
 
 - [x] Plan and architecture ([docs/PLAN.md](docs/PLAN.md))
-- [ ] Phase 1: full matches end to end, spectator view, records and event logs
+- [x] Phase 1: full matches end to end, spectator view with live AI feed, records and event logs
+- [x] MCP server: any agent can take a seat
 - [ ] Leaderboard: Elo and behaviour stats computed from records (`arena/records/`)
 - [ ] Camera director and recording
 - [ ] Highlight reels with overlays and voiceover
