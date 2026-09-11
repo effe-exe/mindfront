@@ -128,6 +128,11 @@ export function trackGLInit(
  * on demand — it's only ever needed in this failure case.
  */
 export function showGLGate(status: WebGLGateStatus): void {
+  // MindFront's recorder (arena/record.mjs) renders on CPU deliberately and
+  // sets this flag; a software-rendering warning would cover the recording.
+  if (status === "software" && localStorage.getItem("mindfront.nogate")) {
+    return;
+  }
   if (document.querySelector("webgl-gate")) {
     return;
   }
