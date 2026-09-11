@@ -29,6 +29,7 @@
     "proprietary/**/*",
     "generated/**/*",
     "tests/**/*",
+    "arena/**/*",
     "src/scripts",
     "vite.config.ts"
   ],
