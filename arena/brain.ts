@@ -11,6 +11,7 @@
  *     [--size Normal] [--bots 120] [--interval 50] [--timer 40]
  *     [--records-dir arena/records] [--no-llm]
  */
+import "dotenv/config";
 import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
