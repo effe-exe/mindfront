@@ -298,10 +298,24 @@ export function observe(
         .filter(
           (p) => p !== me && !neighborIds.has(p.smallID()) && hasCoast(game, p),
         )
-        .sort((a, b) => b.numTilesOwned() - a.numTilesOwned())
-        .slice(0, 3)
         .map(view)
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 6)
     : [];
+
+  // How much room is left to expand: distinct unclaimed land tiles touching my
+  // border (sampled). Small numbers mean "you are boxed in or on an island".
+  const freeLand = new Set<TileRef>();
+  {
+    let scanned = 0;
+    for (const b of me.borderTiles()) {
+      for (const n of game.neighbors(b)) {
+        if (game.isLand(n) && !game.hasOwner(n)) freeLand.add(n);
+      }
+      if (++scanned >= 600) break;
+    }
+  }
+  const freeLandAtBorder = freeLand.size;
 
   const leaderboard = game
     .players()
@@ -372,6 +386,7 @@ export function observe(
       id: me.smallID(),
       name: me.name(),
       tiles,
+      freeLandAtBorder,
       landPct: totalLand > 0 ? round1((tiles / totalLand) * 100) : 0,
       troops: Math.round(me.troops()),
       gold: Number(gold),

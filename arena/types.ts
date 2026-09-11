@@ -108,6 +108,8 @@ export interface Obs {
     id: number;
     name: string;
     tiles: number;
+    /** distinct unclaimed land tiles touching your border (sampled); ~0 = boxed in or on an island */
+    freeLandAtBorder: number;
     landPct: number;
     troops: number;
     gold: number;
