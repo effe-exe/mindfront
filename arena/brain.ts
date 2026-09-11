@@ -143,6 +143,7 @@ interface Seat extends PlayerCtx {
   decisions: number;
   drops: number;
   errors: number;
+  lastDecisionTick: number;
 }
 
 const seats: Seat[] = roster.map((r) => ({
