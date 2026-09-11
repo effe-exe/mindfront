@@ -9,13 +9,20 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
-import type { Game, Player } from "../../src/core/game/Game";
+import { PlayerType, type Game, type Player } from "../../src/core/game/Game";
 import type { Intent } from "../../src/core/Schemas";
 import { sanitize } from "../decide";
-import { observe, toIntents } from "../observe";
+import {
+  minutesLeft,
+  observe,
+  toIntents,
+  UNIT_MAP,
+  viewPlayer,
+} from "../observe";
 import {
   BUILDABLE_UNITS,
   type Action,
+  type BuildableUnit,
   type EventLine,
   type PlayerCtx,
 } from "../types";
@@ -39,6 +46,8 @@ export interface SeatHandle {
   me: () => Player | null;
   ctx: PlayerCtx;
   recentEvents: () => string[];
+  /** events involving anyone, optional */
+  globalEvents?: () => string[];
   send: (intent: Intent) => void;
   /** spectator feed only, no game effect */
   say?: (text: string) => void;
@@ -55,6 +64,130 @@ type Res = { ok: boolean; reason?: string; text?: string };
 
 const RATIO_DESC =
   "fraction of your troops to send, 0.05-0.6 (clamped); defaults to 0.3.";
+
+const UNIT_EFFECTS: Record<BuildableUnit, string> = {
+  City: "Raises your troop cap by 250k per level; upgradable.",
+  Port: "Enables sea trade gold and is required to launch boats and warships.",
+  "Defense Post":
+    "Multiplies attacker losses x5 and slows them x3 on your tiles within range.",
+  "Missile Silo": "Launches nukes at enemy territory. 90 tick cooldown.",
+  "SAM Launcher": "Shoots down incoming nukes. 90 tick cooldown.",
+  Factory: "Boosts gold income and feeds the rail network.",
+  Warship:
+    "Needs a Port. Hunts enemy boats and trade ships, and shells the coast.",
+};
+
+const ATTACK_MATH = [
+  "An attack you send keeps eating tiles on its own until its troops run out or you retreat.",
+  "Troops sent: the ratio you pass, capped at 60% of your army. A boat carries a fifth of your army.",
+  "Per tile taken, the DEFENDER loses its average troops-per-tile (their army / their tiles). Thin, sprawling empires are cheap to eat; small dense ones are not.",
+  "Per tile taken, YOU lose roughly terrain x how outnumbered you are x (a base cost + the defender's troop density). Send a big enough stack and the per-tile cost drops to its floor; send a small one into a big army and it climbs.",
+  "Terrain multiplies both cost and speed: plains cheapest, highland ~25% worse, mountain ~50% worse.",
+  "A Defense Post covering the tile multiplies your losses x5 and your time-per-tile x3.",
+  "Fallout from a nuke multiplies losses and slowness by 2.5-5x.",
+  "A traitor defends worse (recently broke an alliance), and bots die much more easily to humans and nations.",
+  "Big territories are cheaper and faster to attack from AND into; the attacker's bonus is the bigger one.",
+  "Speed: each tick your attack spends a budget proportional to its border width, so a wide front advances faster than a narrow one.",
+].join(" ");
+
+const MAX_MAP_SAMPLES = 20_000;
+
+/** Coarse cols x rows text map of the world, majority owner per cell. */
+function mapOverview(
+  game: Game,
+  me: Player | null,
+  cols: number,
+  rows: number,
+): string {
+  const w = game.width();
+  const h = game.height();
+  const step = Math.max(1, Math.ceil(Math.sqrt((w * h) / MAX_MAP_SAMPLES)));
+  const cellW = w / cols;
+  const cellH = h / rows;
+  // -1 = sea, 0 = unowned land, >0 = player smallID
+  const cells: Map<number, number>[] = [];
+  for (let i = 0; i < cols * rows; i++) cells.push(new Map());
+  const totals = new Map<number, { sx: number; sy: number; n: number }>();
+
+  for (let y = 0; y < h; y += step) {
+    const row = Math.min(rows - 1, Math.floor(y / cellH));
+    for (let x = 0; x < w; x += step) {
+      const t = game.ref(x, y);
+      const owner = game.isLand(t) ? game.ownerID(t) : -1;
+      const cell =
+        cells[row * cols + Math.min(cols - 1, Math.floor(x / cellW))];
+      cell.set(owner, (cell.get(owner) ?? 0) + 1);
+      if (owner > 0) {
+        const c = totals.get(owner);
+        if (c === undefined) totals.set(owner, { sx: x, sy: y, n: 1 });
+        else {
+          c.sx += x;
+          c.sy += y;
+          c.n++;
+        }
+      }
+    }
+  }
+
+  const mySmall = me?.smallID() ?? -2;
+  const label = (owner: number): string => {
+    if (owner === -1) return "~";
+    if (owner === 0) return ".";
+    if (owner === mySmall) return "me";
+    const p = game.playerBySmallID(owner);
+    if (p === undefined || !p.isPlayer()) return "?";
+    return (p.type() === PlayerType.Human ? "L" : "T") + owner;
+  };
+
+  const shown = new Set<number>();
+  const lines: string[] = [];
+  const pad = (s: string) => s.padStart(4);
+  lines.push(
+    "    " + Array.from({ length: cols }, (_, c) => pad("c" + c)).join(""),
+  );
+  for (let r = 0; r < rows; r++) {
+    let line = ("r" + r).padEnd(4);
+    for (let c = 0; c < cols; c++) {
+      let best = -1;
+      let bestN = -1;
+      for (const [owner, n] of cells[r * cols + c]) {
+        if (n > bestN) {
+          bestN = n;
+          best = owner;
+        }
+      }
+      if (best > 0) shown.add(best);
+      line += pad(label(best));
+    }
+    lines.push(line);
+  }
+
+  // Legend: every label in the grid, then the next biggest players, capped.
+  const ranked = [...totals.entries()].sort((a, b) => b[1].n - a[1].n);
+  for (const [owner] of ranked) {
+    if (shown.size >= 24) break;
+    shown.add(owner);
+  }
+  const legend = ranked
+    .filter(([owner]) => shown.has(owner))
+    .map(([owner, c]) => {
+      const p = game.playerBySmallID(owner);
+      const name = p !== undefined && p.isPlayer() ? p.name() : "?";
+      const col = Math.min(cols - 1, Math.floor(c.sx / c.n / cellW));
+      const row = Math.min(rows - 1, Math.floor(c.sy / c.n / cellH));
+      return `${label(owner)}=${name} at (c${col},r${row})`;
+    });
+
+  return [
+    `Map ${cols}x${rows} cells over ${w}x${h} tiles, sampling 1 tile in ${step}. ` +
+      "Columns c0.. run west to east, rows r0.. run north to south. " +
+      'Each cell is whoever holds most of it. "~" = sea, "." = unclaimed land, ' +
+      '"L<id>" = a rival AI, "T<id>" = a scripted tribe, "me" = you.',
+    ...lines,
+    "legend: " +
+      (legend.length > 0 ? legend.join("; ") : "(nobody on the map yet)"),
+  ].join("\n");
+}
 
 export function createArenaServer(opts: ArenaServerOpts): {
   server: McpServer;
@@ -120,7 +253,13 @@ export function createArenaServer(opts: ArenaServerOpts): {
       if ("reason" in l) return l;
       return {
         ...l,
-        obs: observe(l.game, l.me, seat!.ctx, seat!.recentEvents()),
+        obs: observe(
+          l.game,
+          l.me,
+          seat!.ctx,
+          seat!.recentEvents(),
+          seat!.globalEvents?.() ?? [],
+        ),
       };
     }
 
@@ -169,11 +308,14 @@ export function createArenaServer(opts: ArenaServerOpts): {
       "observe",
       {
         description:
-          "Your current view of the world as JSON: your tiles/troops/gold/structures, " +
-          "bordering neighbors (with ids, relation, alliance), whether unclaimed land " +
-          "touches you, boat-reachable coastal players, the leaderboard, what you can " +
-          "afford to build and what everything costs, and recent events. Every id you " +
-          "may reference in another tool comes from here; invented ids are rejected.",
+          "Your current view of the world as JSON: your tiles/troops/troop cap/gold/" +
+          "income/structures/map position, bordering neighbors (ids, relation, " +
+          "alliances, their armies, who they are fighting, their direction and " +
+          "distance from you), whether unclaimed land touches you, boat-reachable " +
+          "coastal players, the leaderboard, what you can afford to build and what " +
+          "everything costs, and recent events. Every id you may reference in another " +
+          "tool comes from here; invented ids are rejected. See also game_info and " +
+          "map_overview.",
         inputSchema: {},
       },
       wrap("observe", () => {
@@ -187,9 +329,11 @@ export function createArenaServer(opts: ArenaServerOpts): {
       "inspect_player",
       {
         description:
-          "Details on one player you can currently see (a neighbor, ally, attacker, " +
-          "leaderboard or boat-reachable id from observe): tiles, troops, relation to " +
-          "you, alliance, whether you share a border, coastal, attacks in and out.",
+          "Full dossier on one player you can currently see (a neighbor, ally, " +
+          "attacker, leaderboard or boat-reachable id from observe): tiles, troops and " +
+          "troop cap, gold, structures, relation, alliances and targets, who they are " +
+          "attacking and who is attacking them, traitor record, growth over the last " +
+          "minute, shared border with you, and their direction/distance from you.",
         inputSchema: { id: z.number().int().describe("smallID from observe") },
       },
       wrap("inspect_player", (a) => {
@@ -207,22 +351,102 @@ export function createArenaServer(opts: ArenaServerOpts): {
         if (p === undefined || !p.isPlayer() || !known) {
           return { ok: false, reason: `unknown id ${id}` };
         }
-        const me = o.me;
         return {
           ok: true,
           text: JSON.stringify({
-            id,
-            name: p.name(),
-            tiles: p.numTilesOwned(),
-            troops: Math.round(p.troops()),
-            relation:
-              o.obs.neighbors.find((n) => n.id === id)?.relation ?? "neutral",
-            allied: me.isAlliedWith(p),
-            sharesBorder: me.sharesBorderWith(p),
-            coastal: o.obs.neighbors.find((n) => n.id === id)?.coastal ?? true,
-            incomingAttacks: p.incomingAttacks().length,
-            outgoingAttacks: p.outgoingAttacks().length,
+            ...viewPlayer(o.game, o.me, p),
+            sharesBorder: o.me.sharesBorderWith(p),
           }),
+        };
+      }),
+    );
+
+    server.registerTool(
+      "game_info",
+      {
+        description:
+          "The match constants that never change mid-game: map and size, land tiles, " +
+          "clock, win rule, alliance and immunity timers, defense post range, what " +
+          "every structure costs and does, how attack losses are actually computed, " +
+          "and the rate limits. Read this once at the start.",
+        inputSchema: {},
+      },
+      wrap("game_info", () => {
+        const game = opts.game();
+        if (game === null)
+          return { ok: false, reason: "the match has not started yet" };
+        const cfg = game.config();
+        const gc = cfg.gameConfig();
+        const me = seat?.me() ?? null;
+        const units: Record<string, { cost: number | null; effect: string }> =
+          {};
+        for (const u of BUILDABLE_UNITS) {
+          units[u] = {
+            cost:
+              me === null
+                ? null
+                : Number(game.unitInfo(UNIT_MAP[u]).cost(game, me)),
+            effect: UNIT_EFFECTS[u],
+          };
+        }
+        return {
+          ok: true,
+          text: JSON.stringify({
+            map: gc.gameMap,
+            mapSize: gc.gameMapSize,
+            mapWidth: game.width(),
+            mapHeight: game.height(),
+            totalLandTiles: game.totalLandTiles(),
+            tick: game.ticks(),
+            ticksPerSecond: 10,
+            minutesLeft: minutesLeft(game),
+            winRule:
+              "Hold 80% of the land to win outright; otherwise the most land when the " +
+              "timer runs out wins. With overtime enabled the 80% bar drops over time.",
+            spawnImmunityTicks: cfg.spawnImmunityDuration(),
+            allianceDurationTicks: cfg.allianceDuration(),
+            allianceRequestDurationTicks: cfg.allianceRequestDuration(),
+            allianceRequestCooldownTicks: cfg.allianceRequestCooldown(),
+            defensePostRange: cfg.defensePostRange(),
+            units,
+            attackMath: ATTACK_MATH,
+            rateLimits:
+              "10 tool calls per second, 150 per minute. Over that you get errors, " +
+              "not actions.",
+            cadence:
+              "No cap on actions per turn and no fixed cadence: act as soon as you " +
+              "have something worth doing. An attack keeps fighting on its own after " +
+              "you send it, so do not re-send it every turn.",
+            minGapTicks: seat?.ctx.intervalTicks ?? 0,
+          }),
+        };
+      }),
+    );
+
+    server.registerTool(
+      "map_overview",
+      {
+        description:
+          "A coarse text map of the whole world: a grid where each cell names the " +
+          "player holding most of it, plus a legend with each player's cell " +
+          "coordinates. Use it to see who is where and which direction to grow.",
+        inputSchema: {
+          cols: z.number().int().min(2).max(24).optional(),
+          rows: z.number().int().min(2).max(12).optional(),
+        },
+      },
+      wrap("map_overview", (a) => {
+        const game = opts.game();
+        if (game === null)
+          return { ok: false, reason: "the match has not started yet" };
+        return {
+          ok: true,
+          text: mapOverview(
+            game,
+            seat?.me() ?? null,
+            Math.min(24, Math.max(2, (a.cols as number) ?? 12)),
+            Math.min(12, Math.max(2, (a.rows as number) ?? 6)),
+          ),
         };
       }),
     );

@@ -47,6 +47,15 @@ export interface PlayerCtx extends RosterEntry {
 
 export type Relation = "hostile" | "distrustful" | "neutral" | "friendly";
 
+export type Compass = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
+
+export interface BBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
 export interface ObsNeighbor {
   /** smallID; the only id space the model ever sees */
   id: number;
@@ -58,11 +67,43 @@ export interface ObsNeighbor {
   allied: boolean;
   attackingMe: boolean;
   coastal: boolean;
+  gold: number;
+  maxTroops: number;
+  /** troops as a percentage of their cap */
+  troopsPct: number;
+  isTraitor: boolean;
+  betrayals: number;
+  /** smallIDs they are allied with */
+  allies: number[];
+  /** smallIDs they have publicly marked as targets */
+  targets: number[];
+  /** smallIDs they currently have an attack running against */
+  attacking: number[];
+  /** smallIDs currently attacking them */
+  attackedBy: number[];
+  /** tiles gained (or lost) over the last minute */
+  tilesDelta1m: number;
+  /** how many of MY border tiles touch them */
+  sharedBorderTiles: number;
+  /** 8-way compass from my cluster centre to theirs */
+  direction: Compass;
+  /** manhattan distance between cluster centres, in tiles */
+  distance: number;
+  structures: Record<BuildableUnit, number>;
 }
 
 export interface Obs {
   tick: number;
   minute: number;
+  /** compact match constants; the full briefing lives in the `game_info` tool */
+  game: {
+    tick: number;
+    /** minutes until the timer ends, null when the match is untimed */
+    minutesLeft: number | null;
+    totalLandTiles: number;
+    mapWidth: number;
+    mapHeight: number;
+  };
   me: {
     id: number;
     name: string;
@@ -78,20 +119,42 @@ export interface Obs {
     allies: number[];
     pendingAllianceRequestsFrom: number[];
     incomingAttacks: { from: number; troops: number }[];
-    outgoingAttacks: { to: number | "land"; troops: number }[];
+    outgoingAttacks: {
+      to: number | "land";
+      troops: number;
+      troopsRemaining: number;
+    }[];
+    maxTroops: number;
+    /** troops as a percentage of my cap */
+    troopsPct: number;
+    /** gold earned over the last minute */
+    goldIncomePerMin: number;
+    /** tiles gained (or lost) over the last minute */
+    tilesDelta1m: number;
+    /** tick my spawn immunity ends; 0 when it is already over */
+    immuneUntilTick: number;
+    isTraitor: boolean;
+    betrayals: number;
+    allianceExpiry: { id: number; ticksLeft: number }[];
+    pendingRequestExpiry: { id: number; ticksLeft: number }[];
+    structures: Record<BuildableUnit, number>;
+    center: { x: number; y: number };
+    bbox: BBox;
   };
   neighbors: ObsNeighbor[];
   unclaimedLandAdjacent: boolean;
   /** top 3 coastal non-neighbors, only if I own a shore tile */
-  reachableByBoat: { id: number; name: string; tiles: number }[];
+  reachableByBoat: ObsNeighbor[];
   /** top 5 by tiles, all players incl. me */
-  leaderboard: { id: number; name: string; tiles: number }[];
+  leaderboard: ObsNeighbor[];
   /** structures affordable right now */
   canBuild: { unit: BuildableUnit; cost: number }[];
   /** current gold price of every structure, affordable or not */
   buildCosts: Record<BuildableUnit, number>;
   /** last ≤8 human-readable events involving me */
   recentEvents: string[];
+  /** last ≤10 human-readable events involving anyone */
+  globalEvents: string[];
   lastResult: string;
   notes: string;
 }
@@ -225,7 +288,13 @@ export type EventLine =
 
 // ---------- function signatures (implemented in agent.ts) ----------
 
-export type Observe = (game: Game, me: Player, ctx: PlayerCtx, recentEvents: string[]) => Obs;
+export type Observe = (
+  game: Game,
+  me: Player,
+  ctx: PlayerCtx,
+  recentEvents: string[],
+  globalEvents?: string[],
+) => Obs;
 
 export type Decide = (
   ctx: PlayerCtx,
@@ -249,9 +318,11 @@ export const TICK_MS = 100;
 export const DEFAULT_INTERVAL_TICKS = 10;
 export const DECIDE_TIMEOUT_MS = 20_000;
 
-
 /**
  * Referential guardrail (layer 2): strips actions whose target/unit/emoji/key
  * was not offered in `obs`. Pure, no game access. Implemented in decide.ts.
  */
-export type Sanitize = (decision: Decision, obs: Obs) => { decision: Decision; dropped: Dropped[] };
+export type Sanitize = (
+  decision: Decision,
+  obs: Obs,
+) => { decision: Decision; dropped: Dropped[] };

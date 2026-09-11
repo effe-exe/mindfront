@@ -1,4 +1,4 @@
-import { observe, toIntents } from "../../arena/observe";
+import { observe, toIntents, trackHistory } from "../../arena/observe";
 import { PlayerCtx, RATIO_MAX } from "../../arena/types";
 import { Game, Player, PlayerType } from "../../src/core/game/Game";
 import { playerInfo, setup } from "../util/Setup";
@@ -28,7 +28,10 @@ describe("arena/observe", () => {
     game = await setup(
       "plains",
       { infiniteGold: true, instantBuild: true, infiniteTroops: true },
-      [playerInfo("player1", PlayerType.Human), playerInfo("player2", PlayerType.Human)],
+      [
+        playerInfo("player1", PlayerType.Human),
+        playerInfo("player2", PlayerType.Human),
+      ],
     );
 
     player1 = game.player("player1");
@@ -58,6 +61,58 @@ describe("arena/observe", () => {
     expect(obs.me.troops).toBeGreaterThan(0);
   });
 
+  test("reports the P4 completeness fields after some ticks and a conquer", () => {
+    for (let i = 0; i < 5; i++) game.executeNextTick();
+    player1.conquer(game.ref(13, 11));
+    const obs = observe(game, player1, ctx(), ["mine"], ["theirs"]);
+
+    expect(obs.game.totalLandTiles).toBeGreaterThan(0);
+    expect(obs.game.mapWidth).toBe(game.width());
+    expect(obs.globalEvents).toEqual(["theirs"]);
+
+    const me = obs.me;
+    expect(me.maxTroops).toBeGreaterThan(0);
+    expect(me.troopsPct).toBeGreaterThanOrEqual(0);
+    expect(me.troopsPct).toBeLessThanOrEqual(100);
+    expect(me.isTraitor).toBe(false);
+    expect(me.betrayals).toBe(0);
+    expect(me.allianceExpiry).toEqual([]);
+    expect(me.pendingRequestExpiry).toEqual([]);
+    expect(me.immuneUntilTick).toBeGreaterThanOrEqual(0);
+    expect(me.structures.City).toBe(0);
+    expect(me.center.x).toBeGreaterThanOrEqual(me.bbox.minX);
+    expect(me.center.x).toBeLessThanOrEqual(me.bbox.maxX);
+    expect(me.tiles).toBe(10);
+  });
+
+  test("gives direction and distance from me to the other human", () => {
+    const obs = observe(game, player1, ctx(), []);
+    const other = obs.leaderboard.find((l) => l.id === player2.smallID());
+
+    // player1 sits around (11,11), player2 around (61,61): south-east, 100 apart.
+    expect(other).toBeDefined();
+    expect(other!.direction).toBe("SE");
+    expect(other!.distance).toBe(100);
+    expect(other!.maxTroops).toBeGreaterThan(0);
+    expect(other!.allies).toEqual([]);
+    expect(other!.attackedBy).toEqual([]);
+    expect(other!.sharedBorderTiles).toBe(0);
+    expect(other!.structures.Port).toBe(0);
+  });
+
+  test("trackHistory twice makes tilesDelta1m reflect growth", () => {
+    trackHistory(game);
+    for (let i = 0; i < 20; i++) game.executeNextTick();
+    for (let y = 10; y <= 12; y++) player1.conquer(game.ref(13, y));
+    trackHistory(game);
+
+    const obs = observe(game, player1, ctx(), []);
+    expect(obs.me.tilesDelta1m).toBeGreaterThan(0);
+    expect(
+      obs.leaderboard.find((l) => l.id === player2.smallID())!.tilesDelta1m,
+    ).toBe(0);
+  });
+
   test("drops an attack on a non-bordering player with a reason", () => {
     const obs = observe(game, player1, ctx(), []);
     expect(player1.sharesBorderWith(player2)).toBe(false);
@@ -66,7 +121,11 @@ describe("arena/observe", () => {
       game,
       player1,
       obs,
-      { reasoning: "test", notes: "", actions: [{ type: "attack", target: player2.smallID(), ratio: 0.3 }] },
+      {
+        reasoning: "test",
+        notes: "",
+        actions: [{ type: "attack", target: player2.smallID(), ratio: 0.3 }],
+      },
       ctx(),
     );
 
@@ -82,7 +141,11 @@ describe("arena/observe", () => {
       game,
       player1,
       obs,
-      { reasoning: "test", notes: "", actions: [{ type: "attack", target: 9999, ratio: 0.3 }] },
+      {
+        reasoning: "test",
+        notes: "",
+        actions: [{ type: "attack", target: 9999, ratio: 0.3 }],
+      },
       ctx(),
     );
 
@@ -103,7 +166,11 @@ describe("arena/observe", () => {
     );
 
     expect(result.intents).toHaveLength(1);
-    const intent = result.intents[0] as { type: "attack"; targetID: null; troops: number };
+    const intent = result.intents[0] as {
+      type: "attack";
+      targetID: null;
+      troops: number;
+    };
     expect(intent.troops).toBe(Math.floor(player1.troops() * RATIO_MAX));
   });
 
@@ -119,7 +186,11 @@ describe("arena/observe", () => {
     );
 
     expect(result.intents).toHaveLength(1);
-    const intent = result.intents[0] as { type: string; targetID: null; troops: number };
+    const intent = result.intents[0] as {
+      type: string;
+      targetID: null;
+      troops: number;
+    };
     expect(intent.type).toBe("attack");
     expect(intent.targetID).toBeNull();
     expect(intent.troops).toBeGreaterThan(0);
@@ -132,7 +203,11 @@ describe("arena/observe", () => {
       game,
       player1,
       obs,
-      { reasoning: "test", notes: "", actions: [{ type: "expand" }, { type: "expand" }] },
+      {
+        reasoning: "test",
+        notes: "",
+        actions: [{ type: "expand" }, { type: "expand" }],
+      },
       ctx(),
     );
 
