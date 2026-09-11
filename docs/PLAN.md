@@ -189,3 +189,15 @@ Action items in Step 0: remove `proprietary/*` on the branch, verify the client 
 - **HyperFrames** (github.com/heygen-com/hyperframes, Node 22+, ffmpeg): install its skills with `npx skills add heygen-com/hyperframes`, then `/hyperframes` for overlays (leaderboard, "Claude betrays Gemini" cards, reasoning captions) composited over the recording.
 - **Chatterbox-Nano** voiceover: `pip install chatterbox-tts`, `ChatterboxTurboTTS.from_pretrained(device="mps", nano=True)`; script generated from `events.jsonl` + each model's `reasoning` lines.
 - **Daily loop + Instagram**: cron runs `npm run arena`, then the render pipeline, then posting (the Postiz-style scheduling connector already configured in this session can upload the reel).
+
+## Decisions (appended by the orchestrator during the build)
+
+- 2026-09-11: `arena/agent.ts` split into `arena/observe.ts` (observe + toIntents) and `arena/decide.ts` (OpenRouter + sanitize + prompt); contract in `arena/types.ts` gained a `Sanitize` type.
+- 2026-09-11: `arena/**` added to `tsconfig.json` include; it was not typechecked before.
+- 2026-09-11: reasoning models (gpt-5-nano) exhausted `max_tokens: 400` on hidden reasoning and returned empty content → `max_tokens: 1500` plus `reasoning: { effort: "low" }` on every call.
+- 2026-09-11: first patch to `src/client`: `TransformHandler.centerAll` retries on the next frame when the canvas has no size yet. Spectators joining mid-game otherwise got scale 0 and a blank map.
+- 2026-09-11: `index.html` stripped of Playwire `ramp.js`, AdShield, Google Ads/Analytics, Cloudflare insights and the CrazyGames SDK. The `window.ramp` stub stays so promo code no-ops.
+- 2026-09-11: brain fallback when the LLM fails is `expand` into unclaimed land (not `wait`), so a dead model still grows.
+- 2026-09-11: guardrail cap is one move action (attack/expand/boat) per decision. Models often ask for expand + attack together; revisit if it makes play too passive.
+- 2026-09-11: `isAlive()` is false before random spawn places a player; the brain tracks `unspawned | alive | dead` explicitly.
+- 2026-09-11: records and events are serialized with the repo's bigint-safe `replacer` from `src/core/Util.ts`.
