@@ -161,12 +161,13 @@ function resolveTarget(game: Game, id: number | undefined): Player | undefined {
   return p;
 }
 
-type Category = "move" | "build" | "diplo" | "comm";
+type Category = "expand" | "move" | "build" | "diplo" | "comm";
 
 function categoryOf(type: Action["type"]): Category | null {
   switch (type) {
-    case "attack":
     case "expand":
+      return "expand";
+    case "attack":
     case "boat":
       return "move";
     case "build":

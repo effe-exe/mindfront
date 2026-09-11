@@ -198,6 +198,6 @@ Action items in Step 0: remove `proprietary/*` on the branch, verify the client 
 - 2026-09-11: first patch to `src/client`: `TransformHandler.centerAll` retries on the next frame when the canvas has no size yet. Spectators joining mid-game otherwise got scale 0 and a blank map.
 - 2026-09-11: `index.html` stripped of Playwire `ramp.js`, AdShield, Google Ads/Analytics, Cloudflare insights and the CrazyGames SDK. The `window.ramp` stub stays so promo code no-ops.
 - 2026-09-11: brain fallback when the LLM fails is `expand` into unclaimed land (not `wait`), so a dead model still grows.
-- 2026-09-11: guardrail cap is one move action (attack/expand/boat) per decision. Models often ask for expand + attack together; revisit if it makes play too passive.
+- 2026-09-11: guardrail cap was one move action per decision; match 2 showed 35–67 drops per 47 decisions from it and both LLMs lost to a tribe. Now: one expand PLUS one attack/boat per turn.
 - 2026-09-11: `isAlive()` is false before random spawn places a player; the brain tracks `unspawned | alive | dead` explicitly.
 - 2026-09-11: records and events are serialized with the repo's bigint-safe `replacer` from `src/core/Util.ts`.

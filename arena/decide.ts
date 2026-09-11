@@ -34,7 +34,7 @@ RULES
 - "expand" claims adjacent unclaimed land cheaply — do this early and often when unclaimedLandAdjacent is true.
 - "attack" sends a fraction ("ratio") of your troops at a neighbor. Attacking well-defended land costs more troops than it gains.
 - Structures (cost gold): City raises troop cap; Port enables sea trade and boats; Defense Post strengthens nearby borders; Factory boosts gold; Warship (needs a Port) hunts enemy ships; Missile Silo launches nukes at enemies; SAM Launcher shoots down incoming nukes.
-- Per turn you get at most ONE movement action (expand, attack or boat), ONE build, ONE diplomacy action and ONE emoji/chat. Extra actions of the same kind are dropped, so choose.
+- Per turn you get at most ONE expand, ONE attack or boat, ONE build, ONE diplomacy action and ONE emoji/chat. Extra actions of the same kind are dropped, so choose.
 - Turns are ~5 seconds apart; an "attack" keeps fighting on its own after you send it, you do not need to repeat it every turn.
 - Alliances last 5 minutes. Breaking one brands you a traitor and blocks attacks in both directions — treat alliances as temporary tools, not friendships.
 - Boats can strike non-adjacent coastal targets, at most 3 in flight at once.
@@ -176,9 +176,10 @@ export const decide: Decide = async (ctx, obs, opts) => {
   }
 };
 
-type CapGroup = "move" | "build" | "diplo" | "comm";
+type CapGroup = "expand" | "move" | "build" | "diplo" | "comm";
 function capGroup(type: Action["type"]): CapGroup | null {
-  if (type === "attack" || type === "expand" || type === "boat") return "move";
+  if (type === "expand") return "expand";
+  if (type === "attack" || type === "boat") return "move";
   if (type === "build") return "build";
   if (
     type === "ally" ||
@@ -208,7 +209,7 @@ export const sanitize: Sanitize = (decision, obs) => {
     ...obs.me.incomingAttacks.map((a) => a.from),
   ]);
 
-  const seen: Record<CapGroup, boolean> = { move: false, build: false, diplo: false, comm: false };
+  const seen: Record<CapGroup, boolean> = { expand: false, move: false, build: false, diplo: false, comm: false };
   const kept: Action[] = [];
 
   for (const original of decision.actions) {
