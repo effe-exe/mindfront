@@ -12,6 +12,7 @@ import {
   DecisionSchema,
   FALLBACK_DECISION,
   type Obs,
+  type ObsNeighbor,
   type PlayerCtx,
   RATIO_MAX,
   RATIO_MIN,
@@ -43,6 +44,8 @@ RULES
 - Never send more than 60% of your troops in one action. Keep a defensive reserve if incomingAttacks is non-empty.
 - Only "accept_alliance"/"reject_alliance" ids in pendingAllianceRequestsFrom; only "break_alliance" ids in me.allies.
 - You may reference only ids that appear in this turn's observation JSON. An invented id gets the action dropped.
+- The observation tells you more than the basics: me.troopsPct (how full your army is — regen stalls near the cap), me.goldIncomePerMin, me.tilesDelta1m and each rival's, me.immuneUntilTick, me.allianceExpiry/pendingRequestExpiry (ticks left), me.center/bbox, and per player their troop cap, gold, structures, allies, targets, who they are attacking and who is attacking them, betrayals, sharedBorderTiles with you, and their direction and distance from your centre. Use them: attack the thin, fast-shrinking, already-besieged neighbor, not the packed one.
+- If you have tools available, "game_info" gives the map, clock, win rule, timers, unit costs and the real attack math; "map_overview" gives a coarse text map of who holds what, and "inspect_player" the full dossier on one id.
 
 PERSONA
 ${ctx.persona}
@@ -106,9 +109,12 @@ function parseDecision(raw: string): { decision: Decision; fallback: boolean } {
     if (r.success) salvaged.push(r.data);
     if (salvaged.length >= 3) break;
   }
-  if (salvaged.length === 0) return { decision: FALLBACK_DECISION, fallback: true };
+  if (salvaged.length === 0)
+    return { decision: FALLBACK_DECISION, fallback: true };
   const reasoning =
-    typeof obj?.reasoning === "string" ? obj.reasoning.slice(0, 240) : "(unparseable)";
+    typeof obj?.reasoning === "string"
+      ? obj.reasoning.slice(0, 240)
+      : "(unparseable)";
   const notes = typeof obj?.notes === "string" ? obj.notes.slice(0, 300) : "";
   return { decision: { reasoning, notes, actions: salvaged }, fallback: false };
 }
@@ -153,29 +159,35 @@ export const decide: Decide = async (ctx, obs, opts) => {
     const latencyMs = Date.now() - start;
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.warn(`decide[${ctx.model}]: HTTP ${res.status} ${body.slice(0, 200)}`);
+      console.warn(
+        `decide[${ctx.model}]: HTTP ${res.status} ${body.slice(0, 200)}`,
+      );
       return { decision: FALLBACK_DECISION, latencyMs, fallback: true };
     }
     const data = await res.json();
     const raw = extractArgs(data?.choices?.[0]?.message);
     if (raw === undefined) {
-      console.warn(`decide[${ctx.model}]: no tool_call or JSON content in response`);
+      console.warn(
+        `decide[${ctx.model}]: no tool_call or JSON content in response`,
+      );
       return { decision: FALLBACK_DECISION, latencyMs, fallback: true };
     }
     const { decision, fallback } = parseDecision(raw);
     if (fallback) {
-      console.warn(`decide[${ctx.model}]: unparseable decision: ${raw.slice(0, 200)}`);
+      console.warn(
+        `decide[${ctx.model}]: unparseable decision: ${raw.slice(0, 200)}`,
+      );
     }
     return { decision, latencyMs, fallback };
   } catch (err) {
     const isTimeout =
-      err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
+      err instanceof Error &&
+      (err.name === "AbortError" || err.name === "TimeoutError");
     const latencyMs = isTimeout ? timeoutMs : Date.now() - start;
     console.warn(`decide[${ctx.model}]: ${String(err).slice(0, 200)}`);
     return { decision: FALLBACK_DECISION, latencyMs, fallback: true };
   }
 };
-
 
 export const sanitize: Sanitize = (decision, obs) => {
   const dropped: { action: Action; reason: string }[] = [];
@@ -240,14 +252,20 @@ export const sanitize: Sanitize = (decision, obs) => {
       case "emoji":
         if (action.emoji === undefined || !EMOJI_SET.has(action.emoji)) {
           reason = `unknown emoji: ${action.emoji}`;
-        } else if (action.target !== undefined && !knownIds.has(action.target)) {
+        } else if (
+          action.target !== undefined &&
+          !knownIds.has(action.target)
+        ) {
           reason = `target ${action.target} is not a known id`;
         }
         break;
       case "chat":
         if (action.key === undefined || !QUICK_CHAT_KEY_SET.has(action.key)) {
           reason = `unknown quick-chat key: ${action.key}`;
-        } else if (action.target !== undefined && !knownIds.has(action.target)) {
+        } else if (
+          action.target !== undefined &&
+          !knownIds.has(action.target)
+        ) {
           reason = `target ${action.target} is not a known id`;
         }
         break;
@@ -276,10 +294,57 @@ export const sanitize: Sanitize = (decision, obs) => {
 
 // ---------- self-check ----------
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  const NO_STRUCTURES = {
+    City: 0,
+    Port: 0,
+    "Defense Post": 0,
+    "Missile Silo": 0,
+    "SAM Launcher": 0,
+    Factory: 0,
+    Warship: 0,
+  };
+  // minimal enriched-player fixture; only the fields sanitize() reads vary
+  const nb = (
+    p: Partial<ObsNeighbor> & { id: number; name: string },
+  ): ObsNeighbor => ({
+    kind: "llm",
+    tiles: 100,
+    troops: 100,
+    relation: "neutral",
+    allied: false,
+    attackingMe: false,
+    coastal: true,
+    gold: 0,
+    maxTroops: 1000,
+    troopsPct: 10,
+    isTraitor: false,
+    betrayals: 0,
+    allies: [],
+    targets: [],
+    attacking: [],
+    attackedBy: [],
+    tilesDelta1m: 0,
+    sharedBorderTiles: 0,
+    direction: "N",
+    distance: 10,
+    structures: { ...NO_STRUCTURES },
+    ...p,
+  });
+
   const CANNED_OBS: Obs = {
     tick: 500,
     minute: 5,
+    game: {
+      tick: 500,
+      minutesLeft: 25,
+      totalLandTiles: 1_000_000,
+      mapWidth: 1000,
+      mapHeight: 500,
+    },
     me: {
       id: 1,
       name: "Tester",
@@ -296,68 +361,115 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       pendingAllianceRequestsFrom: [3],
       incomingAttacks: [],
       outgoingAttacks: [],
+      maxTroops: 10_000,
+      troopsPct: 10,
+      goldIncomePerMin: 100,
+      tilesDelta1m: 20,
+      immuneUntilTick: 0,
+      isTraitor: false,
+      betrayals: 0,
+      allianceExpiry: [{ id: 7, ticksLeft: 1000 }],
+      pendingRequestExpiry: [{ id: 3, ticksLeft: 100 }],
+      structures: { ...NO_STRUCTURES, City: 1 },
+      center: { x: 100, y: 100 },
+      bbox: { minX: 80, minY: 80, maxX: 120, maxY: 120 },
     },
     neighbors: [
-      {
-        id: 3,
-        name: "Three",
-        kind: "llm",
-        tiles: 800,
-        troops: 700,
-        relation: "neutral",
-        allied: false,
-        attackingMe: false,
-        coastal: true,
-      },
-      {
+      nb({ id: 3, name: "Three", tiles: 800, troops: 700 }),
+      nb({
         id: 7,
         name: "Seven",
-        kind: "llm",
         tiles: 600,
         troops: 500,
         relation: "friendly",
         allied: true,
-        attackingMe: false,
-        coastal: true,
-      },
+      }),
     ],
     unclaimedLandAdjacent: true,
-    reachableByBoat: [{ id: 12, name: "Twelve", tiles: 400 }],
+    reachableByBoat: [nb({ id: 12, name: "Twelve", tiles: 400 })],
     leaderboard: [
-      { id: 1, name: "Tester", tiles: 1000 },
-      { id: 3, name: "Three", tiles: 800 },
+      nb({ id: 1, name: "Tester", tiles: 1000 }),
+      nb({ id: 3, name: "Three", tiles: 800 }),
     ],
     canBuild: [{ unit: "City", cost: 100 }],
-  buildCosts: { City: 125000, Port: 125000, "Defense Post": 50000, "Missile Silo": 1000000, "SAM Launcher": 1500000, Factory: 250000, Warship: 250000 },
+    buildCosts: {
+      City: 125000,
+      Port: 125000,
+      "Defense Post": 50000,
+      "Missile Silo": 1000000,
+      "SAM Launcher": 1500000,
+      Factory: 250000,
+      Warship: 250000,
+    },
     recentEvents: [],
+    globalEvents: [],
     lastResult: "",
     notes: "",
   };
 
-  const mk = (actions: Action[]): Decision => ({ reasoning: "test", notes: "", actions });
+  const mk = (actions: Action[]): Decision => ({
+    reasoning: "test",
+    notes: "",
+    actions,
+  });
 
   // drops
   {
-    const { decision, dropped } = sanitize(mk([{ type: "attack", target: 99, ratio: 0.3 }]), CANNED_OBS);
-    assert.equal(decision.actions.length, 0, "invented id attack should be dropped");
+    const { decision, dropped } = sanitize(
+      mk([{ type: "attack", target: 99, ratio: 0.3 }]),
+      CANNED_OBS,
+    );
+    assert.equal(
+      decision.actions.length,
+      0,
+      "invented id attack should be dropped",
+    );
     assert.equal(dropped.length, 1);
   }
   {
-    const { decision } = sanitize(mk([{ type: "attack", target: 7, ratio: 0.3 }]), CANNED_OBS);
-    assert.equal(decision.actions.length, 0, "attack on ally should be dropped");
+    const { decision } = sanitize(
+      mk([{ type: "attack", target: 7, ratio: 0.3 }]),
+      CANNED_OBS,
+    );
+    assert.equal(
+      decision.actions.length,
+      0,
+      "attack on ally should be dropped",
+    );
   }
   {
-    const { decision } = sanitize(mk([{ type: "attack", target: 3, ratio: 5 }]), CANNED_OBS);
-    assert.equal(decision.actions.length, 1, "attack with ratio 5 should be kept, clamped");
+    const { decision } = sanitize(
+      mk([{ type: "attack", target: 3, ratio: 5 }]),
+      CANNED_OBS,
+    );
+    assert.equal(
+      decision.actions.length,
+      1,
+      "attack with ratio 5 should be kept, clamped",
+    );
     assert.equal(decision.actions[0].ratio, RATIO_MAX);
   }
   {
-    const { decision } = sanitize(mk([{ type: "break_alliance", target: 3 }]), CANNED_OBS);
-    assert.equal(decision.actions.length, 0, "break_alliance on non-ally should be dropped");
+    const { decision } = sanitize(
+      mk([{ type: "break_alliance", target: 3 }]),
+      CANNED_OBS,
+    );
+    assert.equal(
+      decision.actions.length,
+      0,
+      "break_alliance on non-ally should be dropped",
+    );
   }
   {
-    const { decision } = sanitize(mk([{ type: "accept_alliance", target: 7 }]), CANNED_OBS);
-    assert.equal(decision.actions.length, 0, "accept_alliance on non-pending should be dropped");
+    const { decision } = sanitize(
+      mk([{ type: "accept_alliance", target: 7 }]),
+      CANNED_OBS,
+    );
+    assert.equal(
+      decision.actions.length,
+      0,
+      "accept_alliance on non-pending should be dropped",
+    );
   }
   {
     const { decision, dropped } = sanitize(
@@ -371,34 +483,55 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     assert.equal(dropped.length, 0);
   }
   {
-    const { decision } = sanitize(mk([{ type: "emoji", emoji: "🛸" }]), CANNED_OBS);
+    const { decision } = sanitize(
+      mk([{ type: "emoji", emoji: "🛸" }]),
+      CANNED_OBS,
+    );
     assert.equal(decision.actions.length, 0, "unknown emoji should be dropped");
   }
   {
-    const { decision } = sanitize(mk([{ type: "chat", key: "not.a.real.key" }]), CANNED_OBS);
+    const { decision } = sanitize(
+      mk([{ type: "chat", key: "not.a.real.key" }]),
+      CANNED_OBS,
+    );
     assert.equal(decision.actions.length, 0, "bad chat key should be dropped");
   }
 
   // keeps
   {
-    const { decision } = sanitize(mk([{ type: "expand", ratio: 0.3 }]), CANNED_OBS);
+    const { decision } = sanitize(
+      mk([{ type: "expand", ratio: 0.3 }]),
+      CANNED_OBS,
+    );
     assert.equal(decision.actions.length, 1);
     assert.equal(decision.actions[0].ratio, 0.3);
   }
   {
-    const { decision } = sanitize(mk([{ type: "attack", target: 3, ratio: 0.3 }]), CANNED_OBS);
+    const { decision } = sanitize(
+      mk([{ type: "attack", target: 3, ratio: 0.3 }]),
+      CANNED_OBS,
+    );
     assert.equal(decision.actions.length, 1);
   }
   {
-    const { decision } = sanitize(mk([{ type: "accept_alliance", target: 3 }]), CANNED_OBS);
+    const { decision } = sanitize(
+      mk([{ type: "accept_alliance", target: 3 }]),
+      CANNED_OBS,
+    );
     assert.equal(decision.actions.length, 1);
   }
   {
-    const { decision } = sanitize(mk([{ type: "build", unit: "City" }]), CANNED_OBS);
+    const { decision } = sanitize(
+      mk([{ type: "build", unit: "City" }]),
+      CANNED_OBS,
+    );
     assert.equal(decision.actions.length, 1);
   }
   {
-    const { decision } = sanitize(mk([{ type: "boat", target: 12, ratio: 0.2 }]), CANNED_OBS);
+    const { decision } = sanitize(
+      mk([{ type: "boat", target: 12, ratio: 0.2 }]),
+      CANNED_OBS,
+    );
     assert.equal(decision.actions.length, 1);
   }
 
@@ -417,7 +550,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mockFetch = (impl: () => Promise<any>) => impl as unknown as typeof fetch;
+  const mockFetch = (impl: () => Promise<any>) =>
+    impl as unknown as typeof fetch;
 
   void (async () => {
     // (a) proper tool_call response
@@ -446,7 +580,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         }),
         text: async () => "",
       }));
-      const { decision, fallback } = await decide(CTX, CANNED_OBS, { apiKey: "x", fetchImpl });
+      const { decision, fallback } = await decide(CTX, CANNED_OBS, {
+        apiKey: "x",
+        fetchImpl,
+      });
       assert.equal(fallback, false, "(a) tool_call should parse");
       assert.equal(decision.actions[0].type, "wait");
     }
@@ -462,7 +599,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
               message: {
                 content:
                   "```json\n" +
-                  JSON.stringify({ reasoning: "hi2", notes: "", actions: [{ type: "expand", ratio: 0.3 }] }) +
+                  JSON.stringify({
+                    reasoning: "hi2",
+                    notes: "",
+                    actions: [{ type: "expand", ratio: 0.3 }],
+                  }) +
                   "\n```",
               },
             },
@@ -470,7 +611,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         }),
         text: async () => "",
       }));
-      const { decision, fallback } = await decide(CTX, CANNED_OBS, { apiKey: "x", fetchImpl });
+      const { decision, fallback } = await decide(CTX, CANNED_OBS, {
+        apiKey: "x",
+        fetchImpl,
+      });
       assert.equal(fallback, false, "(b) fenced content should parse");
       assert.equal(decision.actions[0].type, "expand");
     }
@@ -480,10 +624,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const fetchImpl = mockFetch(async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ choices: [{ message: { content: "not json at all, sorry" } }] }),
+        json: async () => ({
+          choices: [{ message: { content: "not json at all, sorry" } }],
+        }),
         text: async () => "",
       }));
-      const { fallback } = await decide(CTX, CANNED_OBS, { apiKey: "x", fetchImpl });
+      const { fallback } = await decide(CTX, CANNED_OBS, {
+        apiKey: "x",
+        fetchImpl,
+      });
       assert.equal(fallback, true, "(c) garbage should fall back");
     }
 
@@ -495,7 +644,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         json: async () => ({}),
         text: async () => "rate limited",
       }));
-      const { fallback } = await decide(CTX, CANNED_OBS, { apiKey: "x", fetchImpl });
+      const { fallback } = await decide(CTX, CANNED_OBS, {
+        apiKey: "x",
+        fetchImpl,
+      });
       assert.equal(fallback, true, "(d) HTTP 429 should fall back");
     }
 

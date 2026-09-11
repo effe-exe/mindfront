@@ -15,6 +15,7 @@ import { playerInfo, setup } from "../util/Setup";
 
 let game: Game;
 let player1: Player;
+let player2: Player;
 let sent: Intent[];
 let events: (EventLine | ToolLine)[];
 let client: Client;
@@ -45,6 +46,14 @@ async function call(name: string, args: Record<string, unknown> = {}) {
   return JSON.parse(res.content[0].text);
 }
 
+/** raw text payload of a tool call */
+async function callText(name: string, args: Record<string, unknown> = {}) {
+  const res = (await client.callTool({ name, arguments: args })) as {
+    content: { type: string; text: string }[];
+  };
+  return res.content[0].text;
+}
+
 function makeServer() {
   const seat: SeatHandle = {
     name: "Tester",
@@ -70,7 +79,7 @@ describe("arena/mcp", () => {
       playerInfo("player2", PlayerType.Human),
     ]);
     player1 = game.player("player1");
-    const player2 = game.player("player2");
+    player2 = game.player("player2");
     for (let x = 10; x <= 12; x++) {
       for (let y = 10; y <= 12; y++) player1.conquer(game.ref(x, y));
     }
@@ -96,6 +105,8 @@ describe("arena/mcp", () => {
       "rules",
       "observe",
       "inspect_player",
+      "game_info",
+      "map_overview",
       "expand",
       "attack",
       "boat",
@@ -116,6 +127,43 @@ describe("arena/mcp", () => {
     const obs = await call("observe");
     expect(obs.me.tiles).toBeGreaterThan(0);
     expect(obs.me.id).toBe(player1.smallID());
+  });
+
+  test("game_info returns the match constants and unit costs", async () => {
+    const info = await call("game_info");
+    expect(info).toHaveProperty("minutesLeft");
+    expect(info.totalLandTiles).toBeGreaterThan(0);
+    expect(info.mapWidth).toBe(game.width());
+    expect(info.units.City.cost).toBeGreaterThan(0);
+    expect(info.units.Port.effect).toBeTruthy();
+    expect(info.allianceDurationTicks).toBeGreaterThan(0);
+    expect(info.defensePostRange).toBeGreaterThan(0);
+    expect(info.attackMath).toMatch(/troops/i);
+    expect(info.rateLimits).toMatch(/150/);
+  });
+
+  test("map_overview returns a grid with a legend naming both players", async () => {
+    const text = await callText("map_overview", { cols: 8, rows: 4 });
+    const lines = text.split("\n");
+    // header blurb + column header + 4 grid rows + legend
+    expect(lines).toHaveLength(7);
+    expect(lines.filter((l) => /^r\d/.test(l))).toHaveLength(4);
+    const legend = lines[lines.length - 1];
+    expect(legend.startsWith("legend: ")).toBe(true);
+    expect(legend).toContain(player1.name());
+    expect(legend).toContain(player2.name());
+    expect(legend).toContain("me=");
+  });
+
+  test("inspect_player returns the enriched dossier", async () => {
+    const p = await call("inspect_player", { id: player2.smallID() });
+    expect(p.id).toBe(player2.smallID());
+    expect(p.maxTroops).toBeGreaterThan(0);
+    expect(p.direction).toBe("SE");
+    expect(p.distance).toBeGreaterThan(0);
+    expect(p.sharesBorder).toBe(false);
+    expect(p.structures).toHaveProperty("City");
+    expect(p.attacking).toEqual([]);
   });
 
   test("expand sends one land-grab intent", async () => {
