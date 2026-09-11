@@ -63,6 +63,7 @@ import { GameStartingModal } from "./GameStartingModal";
 import "./GameStatsModal";
 import { HelpModal } from "./HelpModal";
 import "./HomepagePromos";
+import "./hud/layers/ArenaFeed";
 import { HostLobbyModal as HostPrivateLobbyModal } from "./HostLobbyModal";
 import { showInGameAlert, showInGameConfirm } from "./InGameModal";
 import "./InventoryModal";

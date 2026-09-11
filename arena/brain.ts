@@ -14,6 +14,7 @@
 import "dotenv/config";
 import { randomUUID } from "crypto";
 import fs from "fs";
+import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { WebSocket } from "ws";
@@ -211,8 +212,34 @@ console.log(`spectate: http://localhost:9000/game/${gameID}?spectate`);
 const eventsPath = path.join(recordsDir, `${gameID}.events.jsonl`);
 const recordPath = path.join(recordsDir, `${gameID}.json`);
 fs.writeFileSync(eventsPath, "");
+// Live feed for spectators: SSE on --feed-port (default 9100), consumed by the
+// client's <arena-feed> element. Replays the buffer, then streams new lines.
+const feedBuffer: string[] = [];
+const feedClients = new Set<http.ServerResponse>();
+const feedPort = Number(process.env.ARENA_FEED_PORT ?? 9100);
+http
+  .createServer((req, res) => {
+    if (req.url !== `/feed/${gameID}`) {
+      res.writeHead(404, { "Access-Control-Allow-Origin": "*" }).end();
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Access-Control-Allow-Origin": "*",
+    });
+    for (const l of feedBuffer) res.write(`data: ${l}\n\n`);
+    feedClients.add(res);
+    req.on("close", () => feedClients.delete(res));
+  })
+  .listen(feedPort, () => console.log(`feed: http://localhost:${feedPort}/feed/${gameID}`));
+
 function writeEvent(line: EventLine) {
-  fs.appendFileSync(eventsPath, JSON.stringify(line, replacer) + "\n");
+  const json = JSON.stringify(line, replacer);
+  fs.appendFileSync(eventsPath, json + "\n");
+  feedBuffer.push(json);
+  if (feedBuffer.length > 300) feedBuffer.shift();
+  for (const c of feedClients) c.write(`data: ${json}\n\n`);
 }
 
 // ---------- game state ----------
