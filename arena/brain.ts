@@ -26,6 +26,7 @@ import {
   GameMode,
   GameType,
   Player,
+  AllPlayers,
 } from "../src/core/game/Game";
 import {
   ErrorUpdate,
@@ -356,6 +357,12 @@ function send(seat: Seat, msg: Parameters<typeof encodeClientMessage>[0]) {
   seat.ws.send(encodeClientMessage(msg, ctx));
 }
 
+/** something only this seat should know (a message addressed to it) */
+function note(seat: Seat, text: string) {
+  seat.recentEvents.push(text);
+  if (seat.recentEvents.length > 8) seat.recentEvents.shift();
+}
+
 /** last 10 notable events anyone can see (conquests, betrayals, nukes, deaths) */
 const globalEvents: string[] = [];
 function simEvent(type: string, text: string, players: string[]) {
@@ -529,6 +536,27 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     if (!/nuke|mirv/i.test(d.message)) continue;
     const p = d.playerID === null ? null : g.playerBySmallID(d.playerID);
     simEvent("nuke", d.message, p !== null && p.isPlayer() ? [p.name()] : []);
+  }
+  // Communication from other players lands in the recipient's recentEvents so
+  // models can signal each other (alliances, threats) through emoji and chat.
+  for (const e of u[GameUpdateType.Emoji]) {
+    const from = g.playerBySmallID(e.emoji.senderID);
+    if (!from.isPlayer()) continue;
+    const all = e.emoji.recipientID === AllPlayers;
+    for (const seat of seats) {
+      if (seat.me === null || seat.me === from) continue;
+      if (all || seat.me.smallID() === e.emoji.recipientID) {
+        note(seat, `${from.name()} sent ${all ? "everyone" : "you"} ${e.emoji.message}`);
+      }
+    }
+  }
+  for (const c of u[GameUpdateType.DisplayChatEvent]) {
+    if (c.isFrom || c.playerID === null) continue; // the sender-side copy
+    const from = g.playerBySmallID(c.playerID);
+    const seat = seats.find((x) => x.me?.id() === c.recipient);
+    if (!from.isPlayer() || seat === undefined) continue;
+    const about = c.target === undefined ? "" : ` (about ${g.player(c.target).name()})`;
+    note(seat, `${from.name()} says "${c.category}.${c.key}"${about}`);
   }
 
   for (const seat of seats) {
