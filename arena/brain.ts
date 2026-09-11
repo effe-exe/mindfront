@@ -12,6 +12,7 @@
  *     [--records-dir arena/records] [--no-llm]
  */
 import "dotenv/config";
+import { spawn } from "child_process";
 import { randomUUID } from "crypto";
 import fs from "fs";
 import http from "http";
@@ -72,6 +73,7 @@ const flags = {
   recordsDir: "arena/records",
   noLlm: false,
   mcpPort: 9200,
+  record: true,
 };
 {
   const argv = process.argv.slice(2);
@@ -108,6 +110,9 @@ const flags = {
         break;
       case "--mcp-port":
         flags.mcpPort = parseInt(next(), 10);
+        break;
+      case "--no-record":
+        flags.record = false;
         break;
       default:
         throw new Error(`unknown argument: ${argv[i]}`);
@@ -214,6 +219,15 @@ const lobby = (await created.json()) as {
 };
 const gameID = lobby.gameID;
 console.log(`spectate: http://localhost:9000/game/${gameID}?spectate`);
+// Every match is recorded unless --no-record: arena/record.mjs watches the
+// spectator page in headless Chromium and writes <records>/<gameID>.mp4.
+if (flags.record) {
+  spawn(
+    process.execPath,
+    [path.join(ROOT, "arena/record.mjs"), gameID, "--minutes", String(flags.timer + 6), "--out", recordsDir],
+    { stdio: ["ignore", "inherit", "inherit"] },
+  ).on("exit", (code) => console.log(`recorder exited (${code})`));
+}
 
 const eventsPath = path.join(recordsDir, `${gameID}.events.jsonl`);
 const recordPath = path.join(recordsDir, `${gameID}.json`);

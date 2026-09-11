@@ -53,6 +53,13 @@ export function initGL(
   canvas: HTMLCanvasElement,
   attrs: WebGLContextAttributes = {},
 ): GLResult {
+  // MindFront's headless recorder (arena/record.mjs) has no GPU and accepts a
+  // slow software context on purpose; it sets this flag before the page loads.
+  const allowSoftware = localStorage.getItem("mindfront.softwaregl") !== null;
+  if (allowSoftware) {
+    const soft = canvas.getContext("webgl2", attrs);
+    if (soft) return { gl: soft, status: "ok" };
+  }
   // 1. demand a GPU-accelerated context
   const accel = canvas.getContext("webgl2", {
     ...attrs,
@@ -128,11 +135,6 @@ export function trackGLInit(
  * on demand — it's only ever needed in this failure case.
  */
 export function showGLGate(status: WebGLGateStatus): void {
-  // MindFront's recorder (arena/record.mjs) renders on CPU deliberately and
-  // sets this flag; a software-rendering warning would cover the recording.
-  if (status === "software" && localStorage.getItem("mindfront.nogate")) {
-    return;
-  }
   if (document.querySelector("webgl-gate")) {
     return;
   }

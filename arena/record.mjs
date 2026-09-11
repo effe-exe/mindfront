@@ -31,8 +31,8 @@ const context = await browser.newContext({
   viewport: size,
   recordVideo: { dir: path.join(outDir, "tmp"), size },
 });
-// Tell the client not to show its "hardware acceleration is off" gate (initGL.ts).
-await context.addInitScript(() => localStorage.setItem("mindfront.nogate", "1"));
+// Headless Chromium has no GPU: tell the client to accept a software WebGL context (initGL.ts).
+await context.addInitScript(() => localStorage.setItem("mindfront.softwaregl", "1"));
 const page = await context.newPage();
 await page.goto(`http://localhost:9000/game/${gameID}?spectate`, { waitUntil: "load" });
 console.log(`recording ${gameID} for up to ${minutes} min`);
