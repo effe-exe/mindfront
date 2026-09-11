@@ -11,6 +11,9 @@ import { z } from "zod";
 import { systemPrompt } from "./decide";
 import type { PlayerCtx } from "./types";
 
+/** models whose providers reject the `reasoning` parameter (learned at runtime) */
+const NO_REASONING = new Set<string>();
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export interface RunPlayerOpts {
@@ -113,6 +116,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
       ];
 
       roundLoop: while (calls < maxToolCallsPerRound) {
+        const withReasoning = !NO_REASONING.has(model);
         const res = await fetchImpl(OPENROUTER_URL, {
           method: "POST",
           headers: {
@@ -124,7 +128,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
           body: JSON.stringify({
             model,
             max_tokens: 1500,
-            reasoning: { effort: "low" },
+            // Some models have no provider that accepts the reasoning knob; retried without it below.
+            ...(withReasoning ? { reasoning: { effort: "low" } } : {}),
             // Only providers that honor tools/tool_choice; Llama was routed to one that did not.
             provider: { require_parameters: true },
             messages,
@@ -135,6 +140,11 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
         });
         if (!res.ok) {
           const body = await res.text().catch(() => "");
+          if (withReasoning && (res.status === 404 || res.status === 400)) {
+            NO_REASONING.add(model);
+            console.warn(`player[${model}]: HTTP ${res.status}, retrying without the reasoning parameter`);
+            continue roundLoop;
+          }
           console.warn(`player[${model}]: HTTP ${res.status} ${body.slice(0, 200)}`);
           fallback = true;
           break roundLoop;
