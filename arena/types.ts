@@ -253,3 +253,9 @@ export function adaptiveInterval(base: number, latencyEma: number): number {
   const fromLatency = Math.ceil((latencyEma / TICK_MS) * 1.5);
   return Math.min(MAX_INTERVAL_TICKS, Math.max(base, fromLatency));
 }
+
+/**
+ * Referential guardrail (layer 2): strips actions whose target/unit/emoji/key
+ * was not offered in `obs`. Pure, no game access. Implemented in decide.ts.
+ */
+export type Sanitize = (decision: Decision, obs: Obs) => { decision: Decision; dropped: Dropped[] };
