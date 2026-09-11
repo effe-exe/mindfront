@@ -1,5 +1,7 @@
 // Package D: OpenRouter call, prompt, referential guardrails, self-check.
 import assert from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import quickChatData from "resources/QuickChat.json";
 import { flattenedEmojiTable } from "src/core/Util";
@@ -27,25 +29,22 @@ const EMOJI_SET = new Set<string>(flattenedEmojiTable);
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
+/** The player's manual. Read once; it is also what the `rules` tool returns. */
+const GUIDE_URL = new URL("./GUIDE.md", import.meta.url);
+const GUIDE = fs.readFileSync(
+  // vitest serves modules over http, so import.meta.url is not a file URL there.
+  GUIDE_URL.protocol === "file:"
+    ? GUIDE_URL
+    : path.join(process.cwd(), "arena/GUIDE.md"),
+  "utf8",
+);
+
 export function systemPrompt(ctx: PlayerCtx): string {
   return `You are playing OpenFront, a real-time territory conquest game, as "${ctx.name}".
 
-RULES
-- Troop regen scales with how much land you hold. Cities raise your troop cap. Ports earn gold via trade.
-- "expand" claims adjacent unclaimed land cheaply — do this early and often when unclaimedLandAdjacent is true.
-- "attack" sends a fraction ("ratio") of your troops at a neighbor. Attacking well-defended land costs more troops than it gains.
-- "build" only works for units listed in canBuild; buildCosts shows what everything costs so you can save up. Structures (cost gold): City raises troop cap; Port enables sea trade and boats; Defense Post strengthens nearby borders; Factory boosts gold; Warship (needs a Port) hunts enemy ships; Missile Silo launches nukes at enemies; SAM Launcher shoots down incoming nukes.
-- There is no cap on actions per turn and no fixed turn cadence: you are asked again as soon as your previous answer is processed. Faster, sharper decisions win. Illegal actions are dropped with a reason; everything legal is executed.
-- Turns are ~5 seconds apart; an "attack" keeps fighting on its own after you send it, you do not need to repeat it every turn.
-- Alliances last 5 minutes. Breaking one brands you a traitor and blocks attacks in both directions — treat alliances as temporary tools, not friendships.
-- Boats can strike non-adjacent coastal targets, at most 3 in flight at once.
-- You win by holding 80% of the land, or by having the most land when the match timer ends.
-- Neighbors of kind "tribe" are dumb scripted NPCs — easy targets. Neighbors of kind "llm" are the real rivals: other AI models like you.
-- Never send more than 60% of your troops in one action. Keep a defensive reserve if incomingAttacks is non-empty.
-- Only "accept_alliance"/"reject_alliance" ids in pendingAllianceRequestsFrom; only "break_alliance" ids in me.allies.
-- You may reference only ids that appear in this turn's observation JSON. An invented id gets the action dropped.
-- The observation tells you more than the basics: me.troopsPct (how full your army is — regen stalls near the cap), me.goldIncomePerMin, me.tilesDelta1m and each rival's, me.immuneUntilTick, me.allianceExpiry/pendingRequestExpiry (ticks left), me.center/bbox, and per player their troop cap, gold, structures, allies, targets, who they are attacking and who is attacking them, betrayals, sharedBorderTiles with you, and their direction and distance from your centre. Use them: attack the thin, fast-shrinking, already-besieged neighbor, not the packed one.
-- If you have tools available, "game_info" gives the map, clock, win rule, timers, unit costs and the real attack math; "map_overview" gives a coarse text map of who holds what, and "inspect_player" the full dossier on one id.
+${GUIDE}
+
+Only "accept_alliance"/"reject_alliance" ids in pendingAllianceRequestsFrom; only "break_alliance" ids in me.allies. Keep a defensive reserve when incomingAttacks is non-empty.
 
 PERSONA
 ${ctx.persona}
