@@ -33,7 +33,9 @@ RULES
 - Troop regen scales with how much land you hold. Cities raise your troop cap. Ports earn gold via trade.
 - "expand" claims adjacent unclaimed land cheaply — do this early and often when unclaimedLandAdjacent is true.
 - "attack" sends a fraction ("ratio") of your troops at a neighbor. Attacking well-defended land costs more troops than it gains.
-- Defense Posts strengthen your defense near them.
+- Structures (cost gold): City raises troop cap; Port enables sea trade and boats; Defense Post strengthens nearby borders; Factory boosts gold; Warship (needs a Port) hunts enemy ships; Missile Silo launches nukes at enemies; SAM Launcher shoots down incoming nukes.
+- Per turn you get at most ONE movement action (expand, attack or boat), ONE build, ONE diplomacy action and ONE emoji/chat. Extra actions of the same kind are dropped, so choose.
+- Turns are ~5 seconds apart; an "attack" keeps fighting on its own after you send it, you do not need to repeat it every turn.
 - Alliances last 5 minutes. Breaking one brands you a traitor and blocks attacks in both directions — treat alliances as temporary tools, not friendships.
 - Boats can strike non-adjacent coastal targets, at most 3 in flight at once.
 - You win by holding 80% of the land, or by having the most land when the match timer ends.
