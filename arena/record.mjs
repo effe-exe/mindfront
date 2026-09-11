@@ -1,0 +1,56 @@
+// Record a match: headless Chromium on the spectator page, WebM via Playwright,
+// MP4 via ffmpeg. Runs until the brain process exits (or --minutes elapse).
+//   node arena/record.mjs <gameID> [--minutes 25] [--out arena/records]
+import { execFileSync } from "child_process";
+import fs from "fs";
+import path from "path";
+import { chromium } from "playwright";
+
+const gameID = process.argv[2];
+if (!gameID) throw new Error("usage: node arena/record.mjs <gameID> [--minutes N]");
+const minutes = Number(process.argv[process.argv.indexOf("--minutes") + 1] || 25);
+const outDir = process.argv.includes("--out")
+  ? process.argv[process.argv.indexOf("--out") + 1]
+  : "arena/records";
+const size = { width: 1280, height: 720 };
+
+// Reuse whatever Chromium Playwright has cached (newest build) rather than
+// downloading a build pinned to this package version; PW_CHROMIUM overrides.
+const cache = path.join(process.env.HOME ?? "", "Library/Caches/ms-playwright");
+const cached = fs.existsSync(cache)
+  ? fs.readdirSync(cache).filter((d) => d.startsWith("chromium-")).sort().at(-1)
+  : undefined;
+const executablePath =
+  process.env.PW_CHROMIUM ??
+  (cached && path.join(cache, cached, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"));
+const browser = await chromium.launch({
+  executablePath: executablePath && fs.existsSync(executablePath) ? executablePath : undefined,
+  args: ["--use-gl=angle", "--use-angle=swiftshader"],
+});
+const context = await browser.newContext({
+  viewport: size,
+  recordVideo: { dir: path.join(outDir, "tmp"), size },
+});
+const page = await context.newPage();
+await page.goto(`http://localhost:9000/game/${gameID}?spectate`, { waitUntil: "load" });
+console.log(`recording ${gameID} for up to ${minutes} min`);
+
+const brainAlive = () => {
+  try {
+    return execFileSync("pgrep", ["-f", "arena/brain.ts"]).toString().trim() !== "";
+  } catch {
+    return false;
+  }
+};
+const deadline = Date.now() + minutes * 60_000;
+while (Date.now() < deadline && brainAlive()) await new Promise((r) => setTimeout(r, 5000));
+await new Promise((r) => setTimeout(r, 3000)); // let the win modal show
+
+const video = page.video();
+await context.close();
+const webm = await video.path();
+await browser.close();
+const mp4 = path.join(outDir, `${gameID}.mp4`);
+execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", webm, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", mp4]);
+fs.rmSync(webm);
+console.log(`saved ${mp4}`);
