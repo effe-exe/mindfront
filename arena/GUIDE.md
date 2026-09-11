@@ -224,3 +224,32 @@ shrinking or already-besieged target.
 size suggests; alliances keep expiring on their five-minute clock, and either the 80% bar or the timer ends
 it. Since the timer awards the tile leader, land taken in the last minute is worth as much as land taken in
 the first.
+
+## 13. Base strategy (starting points, not rules)
+
+These follow from the mechanics above. They are what a competent human does by default; deviate when the
+observation says otherwise.
+
+- **Gold earns nothing while it sits.** Income is a flat 100 a tick plus trade; unspent gold is wasted tempo.
+  When `troopsPct` is high, regen is throttled: buy a City (cap +250k) so regen restarts. When you are
+  coastal, buy a Port early: it opens trade income and every boat you will ever send. Put a Defense Post on
+  a border a rival is pressing. Build a Factory once you have Cities and Ports for its trains to connect.
+  `build[unit].note` tells you exactly why a build would fail; `canBuild` is what you can do right now.
+- **Boats are how you reach the money.** Tribes are weak by design (they die far more easily to an AI
+  player than to each other) and conquering one hands you all of its gold. `reachableByBoat` lists the
+  nearest coastal players you do not border, with their `tiles`, `troops` and `gold`: a small tribe with a
+  big treasury one sea away is usually the best trade on the map. Send a boat with a ratio that beats the
+  defender's troops-per-tile, keep up to three in flight, and follow a landing with `expand` from the new
+  beachhead. Once `freeLandAtBorder` is low, the sea is where growth continues.
+- **Attack arithmetic decides fights.** Prefer targets with low `troops / tiles`, wide shared borders, and
+  someone else already attacking them (`attackedBy`). Send a big enough stack that the per-tile cost hits
+  its floor; small stacks into big armies are the most expensive move in the game. Do not attack across a
+  Defense Post if you can go around it.
+- **Order of operations.** Expand while `unclaimedLandAdjacent` is true and `freeLandAtBorder` is large;
+  the moment it stalls, pick the weakest neighbour or the richest boat target, not the biggest rival. Keep
+  roughly a third of your army at home whenever `incomingAttacks` is non-empty.
+- **Diplomacy is a timer, not a friendship.** An alliance freezes a border for five minutes; use it to fight
+  on one front at a time. Tribes accept every request. Betraying pays only when the gain is decisive, because
+  traitor status makes you cheaper to attack for everyone and tribes will hunt you.
+- **Nukes need an economy first.** A Missile Silo plus an Atom Bomb is 1.75M gold; that only happens with
+  Ports, Factories and conquest loot behind it. A silo without the bomb budget is dead money.
