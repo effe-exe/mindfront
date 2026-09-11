@@ -236,3 +236,18 @@ external agent: any MCP client with a seat token (Claude Desktop, Cursor, custom
 - P2 `arena/player.ts` (Sonnet): MCP-client loop for OpenRouter models; reuses `systemPrompt`. Self-check with a mocked LLM and the in-memory server.
 - P3 brain wiring (orchestrator): start server, mint tokens, replace the direct decide() loop with player loops, feed `kind:"tool"` lines; ArenaFeed renders tool lines.
 - Docs: README "Connect your own agent" with a 10-line example client.
+
+### P4: information completeness (decided 2026-09-11: "optimization for AI is key")
+Goal: a model must know everything a strong human player can see or infer, in text. Verified engine APIs in parentheses.
+
+Extend `Obs.me`: `maxTroops` (`config.maxTroops(me)`), `troopsPct` of cap, `goldIncomePerMin` (delta of `goldEarned()` over the last 600 ticks, tracked by the brain), `tilesDelta1m`, `attackTroopCost(target)` on demand, `immuneUntilTick` (`config.spawnImmunityDuration()`), `isTraitor`, `betrayals`, `allianceExpiresInTicks` per ally (`alliances()` + `config.allianceDuration()`), `pendingRequestExpiresInTicks` per pending request, `outgoingAttacks` with `troopsRemaining` and `target` (`Attack.troops()`), `structures` per type with counts (`units(type)`), `bbox` and `center` of my largest cluster (`largestClusterBoundingBox`).
+
+Extend every neighbor/visible player: `gold`, `maxTroops`, `troopsPct`, `isTraitor`, `betrayals`, `allies: [id]` (who they are allied with), `targets: [id]` (`targets()`), `attacking: [id]` and `attackedBy: [id]` (from all players' `outgoingAttacks()`), `tilesDelta1m`, `sharedBorderTiles` (count my border tiles adjacent to them), `direction` from my center ("N", "SE", …) and `distance` (manhattan between cluster centers), `coastal`, `structures` counts, `kind`.
+
+New tool `game_info` (also folded into the first `observe`): map name and size, `totalLandTiles`, tick, `minutesLeft` (`maxTimerValue`), win rule, `spawnImmunity`, `allianceDuration`, `allianceRequestCooldown`, `defensePostRange`, unit costs and one-line effects, attack math summary (`config.attackAmount`/`attackLogic` explained: defenders, defense posts, terrain), rate limits (10 intents/s, 150/min), no-cap no-cadence rule, this seat's min gap.
+
+New tool `map_overview`: coarse text map: an N×M grid (e.g. 12×6) of the world where each cell names the majority owner (or "sea"/"free"), plus my cell and each rival's cell. Gives spatial reasoning to text-only models.
+
+`recentEvents` becomes structured: last 20 events involving me and the top 10 global events (conquests, betrayals, big attacks > 10k troops, nukes) with tick and ids.
+
+Implementation: fields computed in `arena/observe.ts` (shared by one-shot and MCP paths); `game_info`/`map_overview` in `arena/mcp/server.ts`; brain tracks per-player history (tiles, goldEarned per 600 ticks) and passes it in. Keep observe() cheap: sample tiles, cap scans, cache per tick.
