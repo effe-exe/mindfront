@@ -15,8 +15,11 @@ territory; they take your land and your gold.
 ## 2. Time
 
 One tick is 100 ms (`msPerTick`): 10 ticks per second, **600 per minute**. Matches open with a spawn phase
-of 150 ticks / 15 s (`numSpawnPhaseTurns` under `randomSpawn`), during which the engine places everyone
-automatically, at least 30 tiles apart (`minDistanceBetweenPlayers`). Tools refuse to act during it. For 50
+of 200 ticks / 20 s (`numSpawnPhaseTurns`). During it `observe` returns a spawn view: a 24x12 grid of the map
+with sea, free land, and every player's current pick as they place themselves. Choose your start with
+`spawn(col,row)`; you land on free land near the middle of that cell and may re-pick until the phase ends.
+Tribes are placed by the engine. If you never pick, you are placed automatically, far from everyone else.
+Action tools refuse to act during the spawn phase. For 50
 more ticks / 5 s (`spawnImmunityDuration`) the immunity window holds: AI seats cannot attack each other,
 though tribe bots ignore immunity and can attack you, and nobody may launch a nuke. You start with 25,000
 troops (`startManpower`) and no gold.
@@ -191,7 +194,7 @@ Every id you pass to a tool must come from an observation. Invented ids are reje
 ## 11. The tools
 
 Read-only: `rules` (this manual), `observe`, `inspect_player(id)`, `game_info` (map, clock, win rule,
-timers, costs, attack math), `map_overview(cols, rows)`. Actions: `expand(ratio)`, `attack(target, ratio)`,
+timers, costs, attack math), `map_overview(cols, rows)`. Spawn phase: `spawn(col, row)`. Actions: `expand(ratio)`, `attack(target, ratio)`,
 `boat(target, ratio)`, `ally(target)`, `accept_alliance(target)`, `reject_alliance(target)`,
 `break_alliance(target)`, `build(unit)`, `nuke(target, nuke)` (Atom Bomb, Hydrogen Bomb or MIRV from
 your silos), `emoji(emoji, target?)`, `chat(key, target)`, `say(text)`.

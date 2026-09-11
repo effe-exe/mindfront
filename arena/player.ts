@@ -85,7 +85,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   const ctxLike = { model, name, persona } as PlayerCtx;
   const baseSystemPrompt =
     systemPrompt(ctxLike) +
-    "\nYou act by calling tools. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act, and `say` only when your plan changes or something notable happens (at most every fifth round, under 15 words, in character). Do not narrate routine moves. Stop calling tools when you are done for this round.";
+    "\nYou act by calling tools. While observe reports phase \"spawn\", pick your start with `spawn(col,row)` from the grid it shows (consider where others already are), then wait for the match. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act, and `say` only when your plan changes or something notable happens (at most every fifth round, under 15 words, in character). Do not narrate routine moves. Stop calling tools when you are done for this round.";
 
   let notes = "";
   let lastResult = "";

@@ -10,6 +10,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import { PlayerType, type Game, type Player } from "../../src/core/game/Game";
+import type { TileRef } from "../../src/core/game/GameMap";
 import type { Intent } from "../../src/core/Schemas";
 import { sanitize } from "../decide";
 import {
@@ -239,17 +240,51 @@ export function createArenaServer(opts: ArenaServerOpts): {
         };
       };
 
-    /** live sim + my player, or the reason I cannot act right now */
-    function live(): { game: Game; me: Player } | { reason: string } {
+    /** sim + my player, whatever the phase */
+    function present(): { game: Game; me: Player } | { reason: string } {
       const game = opts.game();
       if (game === null) return { reason: "the match has not started yet" };
-      if (game.inSpawnPhase()) {
-        return { reason: "spawn phase: wait for the match to start" };
-      }
       const me = seat?.me() ?? null;
       if (me === null) return { reason: "your player is not in the game" };
-      if (!me.isAlive()) return { reason: "you are dead" };
       return { game, me };
+    }
+
+    /** live sim + my player, or the reason I cannot act right now */
+    function live(): { game: Game; me: Player } | { reason: string } {
+      const p = present();
+      if ("reason" in p) return p;
+      if (p.game.inSpawnPhase()) {
+        return { reason: "spawn phase: pick your start with spawn(col,row); actions open when it ends" };
+      }
+      if (!p.me.isAlive()) return { reason: "you are dead" };
+      return p;
+    }
+
+    const SPAWN_COLS = 24;
+    const SPAWN_ROWS = 12;
+    /** what a seat sees during the spawn phase: the map and everyone's current pick */
+    function spawnView(game: Game, me: Player) {
+      const cellW = game.width() / SPAWN_COLS;
+      const cellH = game.height() / SPAWN_ROWS;
+      const cellOf = (p: Player) => {
+        const t = p.tiles().values().next().value as TileRef;
+        return { col: Math.floor(game.x(t) / cellW), row: Math.floor(game.y(t) / cellH) };
+      };
+      const picks = game
+        .players()
+        .filter((p) => p.numTilesOwned() > 0 && p !== me)
+        .map((p) => ({ name: p.name(), kind: p.type() === PlayerType.Human ? "llm" : "tribe", ...cellOf(p) }));
+      return {
+        phase: "spawn",
+        ticksLeft: game.config().numSpawnPhaseTurns() - game.ticks(),
+        howTo:
+          `Call spawn(col,row) with a cell of the ${SPAWN_COLS}x${SPAWN_ROWS} grid below (c0..c${SPAWN_COLS - 1} west to east, ` +
+          `r0..r${SPAWN_ROWS - 1} north to south). You may re-pick until ticksLeft reaches 0; if you never pick, ` +
+          "you are placed automatically. Others' picks are listed as they happen.",
+        myPick: me.numTilesOwned() > 0 ? cellOf(me) : null,
+        picks,
+        map: mapOverview(game, me, SPAWN_COLS, SPAWN_ROWS),
+      };
     }
 
     function obsNow() {
@@ -325,6 +360,9 @@ export function createArenaServer(opts: ArenaServerOpts): {
         inputSchema: {},
       },
       wrap("observe", () => {
+        const p = present();
+        if ("reason" in p) return { ok: false, reason: p.reason };
+        if (p.game.inSpawnPhase()) return { ok: true, text: JSON.stringify(spawnView(p.game, p.me)) };
         const o = obsNow();
         if ("reason" in o) return { ok: false, reason: o.reason };
         return { ok: true, text: JSON.stringify(o.obs) };
@@ -531,6 +569,49 @@ export function createArenaServer(opts: ArenaServerOpts): {
         "right now; observe.buildCosts shows every price so you can save up.",
       { unit: z.enum(BUILDABLE_UNITS) },
       (a) => ({ type: "build", unit: a.unit as Action["unit"] }),
+    );
+
+    server.registerTool(
+      "spawn",
+      {
+        description:
+          "Spawn phase only: choose (or change) where you start. Pass a cell of the " +
+          `${SPAWN_COLS}x${SPAWN_ROWS} grid that observe shows during the spawn phase; you land on free land ` +
+          "near the middle of that cell. Re-pick as often as you like until the phase ends. " +
+          "Others' picks appear in observe as they happen.",
+        inputSchema: { col: z.number().int().min(0).max(SPAWN_COLS - 1), row: z.number().int().min(0).max(SPAWN_ROWS - 1) },
+      },
+      wrap("spawn", (a) => {
+        const p = present();
+        if ("reason" in p) return { ok: false, reason: p.reason };
+        const { game } = p;
+        if (!game.inSpawnPhase()) return { ok: false, reason: "the spawn phase is over" };
+        const col = a.col as number;
+        const row = a.row as number;
+        const cellW = game.width() / SPAWN_COLS;
+        const cellH = game.height() / SPAWN_ROWS;
+        const x0 = Math.floor(col * cellW);
+        const y0 = Math.floor(row * cellH);
+        const cx = x0 + cellW / 2;
+        const cy = y0 + cellH / 2;
+        const step = Math.max(1, Math.floor(Math.min(cellW, cellH) / 12));
+        let best: TileRef | null = null;
+        let bestD = Infinity;
+        for (let y = y0; y < y0 + cellH && y < game.height(); y += step) {
+          for (let x = x0; x < x0 + cellW && x < game.width(); x += step) {
+            const t = game.ref(x, y);
+            if (!game.isLand(t) || game.hasOwner(t)) continue;
+            const d = Math.abs(x - cx) + Math.abs(y - cy);
+            if (d < bestD) {
+              bestD = d;
+              best = t;
+            }
+          }
+        }
+        if (best === null) return { ok: false, reason: `no free land in cell (c${col},r${row}); pick another cell` };
+        seat!.send({ type: "spawn", tile: best });
+        return { ok: true, text: JSON.stringify({ ok: true, cell: { col, row }, tile: { x: game.x(best), y: game.y(best) } }) };
+      }),
     );
 
     action(

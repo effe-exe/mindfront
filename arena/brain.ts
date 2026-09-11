@@ -52,6 +52,7 @@ import {
   decodeServerMessage,
   encodeClientMessage,
 } from "../src/core/ZbinWire";
+import type { TileRef } from "../src/core/game/GameMap";
 import { NodeGameMapLoader } from "../tests/perf/fullgame/NodeGameMapLoader";
 import { systemPrompt } from "./decide";
 import { createArenaServer, ToolLine } from "./mcp/server";
@@ -188,7 +189,9 @@ const config: GameConfig = {
   gameMode: GameMode.FFA,
   nations: "disabled",
   bots: flags.bots,
-  randomSpawn: true,
+  // AI seats pick their own start during the spawn phase (spawn tool); tribes
+  // are still placed by the engine.
+  randomSpawn: false,
   donateGold: true,
   donateTroops: true,
   infiniteGold: false,
@@ -601,12 +604,17 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     );
   }
 
-  if (g.inSpawnPhase()) return;
+  if (!playersStarted) startPlayers();
+  if (g.inSpawnPhase()) {
+    // Anyone who has not picked a start by the last ticks of the spawn phase is
+    // placed by the brain, as far from everyone else as the map allows.
+    if (gu.tick >= g.config().numSpawnPhaseTurns() - 15) autoSpawn(g);
+    return;
+  }
   if (seats.every((s) => s.life === "dead") && !finished) {
     void shutdown("all LLM players dead");
     return;
   }
-  if (!playersStarted) startPlayers();
   for (const seat of seats) {
     if (seat.me === null || !seat.me.isAlive()) continue;
     // Safety net: a seat that has not acted for 30 s still expands into free land.
@@ -618,6 +626,40 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
 }
 
 // ---------- decision pipeline ----------
+
+const autoSpawned = new Set<Seat>();
+function autoSpawn(g: Game) {
+  const taken = g
+    .players()
+    .filter((p) => p.numTilesOwned() > 0)
+    .map((p) => {
+      const t = p.tiles().values().next().value as TileRef;
+      return [g.x(t), g.y(t)] as const;
+    });
+  for (const seat of seats) {
+    if (autoSpawned.has(seat) || seat.me === null || seat.me.numTilesOwned() > 0) continue;
+    autoSpawned.add(seat);
+    let best: TileRef | null = null;
+    let bestD = -1;
+    const w = g.width();
+    const h = g.height();
+    for (let i = 0; i < 600; i++) {
+      const x = Math.floor(Math.random() * w);
+      const y = Math.floor(Math.random() * h);
+      const t = g.ref(x, y);
+      if (!g.isLand(t) || g.hasOwner(t)) continue;
+      const d = taken.length === 0 ? 1 : Math.min(...taken.map(([tx, ty]) => Math.abs(tx - x) + Math.abs(ty - y)));
+      if (d > bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    if (best === null) continue;
+    taken.push([g.x(best), g.y(best)]);
+    send(seat, { type: "intent", intent: { type: "spawn", tile: best } });
+    console.log(`[t=${g.ticks()}] ${seat.name} did not pick a spawn; placed at (${g.x(best)},${g.y(best)})`);
+  }
+}
 
 /** expand into unclaimed land, or nothing */
 function fallbackIntents(g: Game, me: Player): Intent[] {
