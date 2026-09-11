@@ -9,7 +9,7 @@ import {
   PlayerType,
   UnitType,
 } from "../src/core/game/Game";
-import type { TileRef } from "../src/core/game/GameMap";
+import { manhattanDistFN, type TileRef } from "../src/core/game/GameMap";
 import { type Intent, QuickChatKeySchema } from "../src/core/Schemas";
 import { flattenedEmojiTable } from "../src/core/Util";
 import {
@@ -557,7 +557,18 @@ function translate(game: Game, me: Player, action: Action): Translated {
       const unitType = UNIT_MAP[action.unit];
       const needsBorder =
         unitType === UnitType.Port || unitType === UnitType.DefensePost;
-      const pool = needsBorder ? me.borderTiles() : me.tiles();
+      // Warships spawn on water near one of your Ports, never on land you own.
+      const pool =
+        unitType === UnitType.Warship
+          ? me
+              .units(UnitType.Port)
+              .flatMap((p) => [
+                ...game.bfs(p.tile(), manhattanDistFN(p.tile(), 3)),
+              ])
+              .filter((t) => game.isWater(t))
+          : needsBorder
+            ? me.borderTiles()
+            : me.tiles();
       let tile: TileRef | undefined;
       let scanned = 0;
       for (const t of pool) {

@@ -1,6 +1,6 @@
 import { observe, toIntents, trackHistory } from "../../arena/observe";
 import { PlayerCtx, RATIO_MAX } from "../../arena/types";
-import { Game, Player, PlayerType } from "../../src/core/game/Game";
+import { Game, Player, PlayerType, UnitType } from "../../src/core/game/Game";
 import { playerInfo, setup } from "../util/Setup";
 
 let game: Game;
@@ -213,5 +213,48 @@ describe("arena/observe", () => {
 
     expect(result.intents).toHaveLength(2);
     expect(result.dropped).toHaveLength(0);
+  });
+});
+
+describe("arena/observe build Warship", () => {
+  test("translates build Warship into a build_unit intent on water near a Port", async () => {
+    const g = await setup(
+      "half_land_half_ocean",
+      {
+        infiniteGold: true,
+        instantBuild: true,
+        infiniteTroops: true,
+      },
+      [playerInfo("player1", PlayerType.Human)],
+    );
+    const p = g.player("player1");
+    // half_land_half_ocean: land on the left, ocean on the right.
+    const coast =
+      [...Array(g.width()).keys()].find((x) => g.isWater(g.ref(x, 10)))! - 1;
+    for (let x = coast - 2; x <= coast; x++) p.conquer(g.ref(x, 10));
+    p.buildUnit(UnitType.Port, g.ref(coast, 10), {});
+
+    const obs = observe(g, p, ctx(), []);
+    expect(obs.canBuild.some((b) => b.unit === "Warship")).toBe(true);
+    const result = toIntents(
+      g,
+      p,
+      obs,
+      {
+        reasoning: "test",
+        notes: "",
+        actions: [{ type: "build", unit: "Warship" }],
+      },
+      ctx(),
+    );
+    expect(result.dropped).toHaveLength(0);
+    const intent = result.intents[0] as {
+      type: string;
+      unit: string;
+      tile: number;
+    };
+    expect(intent.type).toBe("build_unit");
+    expect(intent.unit).toBe(UnitType.Warship);
+    expect(g.isWater(intent.tile)).toBe(true);
   });
 });
