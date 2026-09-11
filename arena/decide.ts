@@ -246,7 +246,10 @@ export const sanitize: Sanitize = (decision, obs) => {
         break;
       case "build":
         if (action.unit === undefined || !buildableUnits.has(action.unit)) {
-          reason = "cannot afford / not buildable now";
+          reason =
+            action.unit === undefined
+              ? "build needs a unit"
+              : `${action.unit}: ${obs.build?.[action.unit]?.note ?? "cannot afford / not buildable now"}`;
         }
         break;
       case "emoji":
@@ -400,6 +403,15 @@ if (
       "SAM Launcher": 1500000,
       Factory: 250000,
       Warship: 250000,
+    },
+    build: {
+      City: { cost: 125000, affordable: true, placeable: true, note: "affordable; on any of your land tiles" },
+      Port: { cost: 125000, affordable: false, placeable: false, note: "need 1 more gold; needs a coastal tile you own; you have none" },
+      "Defense Post": { cost: 50000, affordable: false, placeable: true, note: "need 1 more gold; on any of your land tiles" },
+      "Missile Silo": { cost: 1000000, affordable: false, placeable: true, note: "need gold" },
+      "SAM Launcher": { cost: 1500000, affordable: false, placeable: true, note: "need gold" },
+      Factory: { cost: 250000, affordable: false, placeable: true, note: "need gold" },
+      Warship: { cost: 250000, affordable: false, placeable: false, note: "needs a Port; you have none" },
     },
     recentEvents: [],
     globalEvents: [],

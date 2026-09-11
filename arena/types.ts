@@ -151,6 +151,8 @@ export interface Obs {
   canBuild: { unit: BuildableUnit; cost: number }[];
   /** current gold price of every structure, affordable or not */
   buildCosts: Record<BuildableUnit, number>;
+  /** per structure: can you pay for it, and is there a legal tile for it right now */
+  build: Record<BuildableUnit, { cost: number; affordable: boolean; placeable: boolean; note: string }>;
   /** last ≤8 human-readable events involving me */
   recentEvents: string[];
   /** last ≤10 human-readable events involving anyone */

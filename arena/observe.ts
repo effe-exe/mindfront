@@ -305,10 +305,26 @@ export function observe(
   const gold = me.gold();
   const canBuild: { unit: BuildableUnit; cost: number }[] = [];
   const buildCosts = {} as Record<BuildableUnit, number>;
+  const build = {} as Obs["build"];
+  const ownShore = hasCoast(game, me);
+  const ports = me.unitCount(UnitType.Port);
+  const ownsLand = me.numTilesOwned() > 0;
   for (const unit of BUILDABLE_UNITS) {
     const cost = game.unitInfo(UNIT_MAP[unit]).cost(game, me);
     buildCosts[unit] = Number(cost);
-    if (cost <= gold) canBuild.push({ unit, cost: Number(cost) });
+    const affordable = cost <= gold;
+    // Placement rules (PlayerImpl.canSpawnUnitType): Port on a coastal tile you
+    // own, Warship launched from one of your Ports, everything else on any of
+    // your land tiles (kept apart from your other structures).
+    const [placeable, where] =
+      unit === "Port"
+        ? [ownShore, ownShore ? "on one of your coastal tiles" : "needs a coastal tile you own; you have none"]
+        : unit === "Warship"
+          ? [ports > 0, ports > 0 ? "launched from one of your Ports" : "needs a Port; you have none"]
+          : [ownsLand, "on any of your land tiles, spaced away from your other structures"];
+    const note = `${affordable ? "affordable" : `need ${Number(cost) - Number(gold)} more gold`}; ${where}`;
+    build[unit] = { cost: Number(cost), affordable, placeable, note };
+    if (affordable && placeable) canBuild.push({ unit, cost: Number(cost) });
   }
 
   const tiles = me.numTilesOwned();
@@ -392,6 +408,7 @@ export function observe(
     leaderboard,
     canBuild,
     buildCosts,
+    build,
     recentEvents: recentEvents.slice(-8),
     globalEvents: globalEvents.slice(-10),
     lastResult: ctx.lastResult,
@@ -551,7 +568,14 @@ function translate(game: Game, me: Player, action: Action): Translated {
         if (++scanned >= 200) break;
       }
       if (tile === undefined)
-        return { reason: `no valid tile to build ${action.unit} right now` };
+        return {
+          reason:
+            unitType === UnitType.Port
+              ? "Port needs a coastal tile you own"
+              : unitType === UnitType.Warship
+                ? "Warship needs one of your Ports"
+                : `no free spot for ${action.unit} (keep distance from your other structures)`,
+        };
       return { intent: { type: "build_unit", unit: unitType, tile } };
     }
 
