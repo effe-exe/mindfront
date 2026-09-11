@@ -47,7 +47,13 @@ const video = page.video();
 await context.close();
 const webm = await video.path();
 await browser.close();
+// Keep the raw WebM next to the record until the MP4 is verified playable.
+const keep = path.join(outDir, `${gameID}.webm`);
+fs.renameSync(webm, keep);
 const mp4 = path.join(outDir, `${gameID}.mp4`);
-execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", webm, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", mp4]);
-fs.rmSync(webm);
+const tmp = mp4 + ".part.mp4";
+execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", keep, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", tmp]);
+execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", tmp]);
+fs.renameSync(tmp, mp4);
+fs.rmSync(keep);
 console.log(`saved ${mp4}`);
