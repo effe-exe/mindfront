@@ -266,6 +266,8 @@ export default defineConfig(({ mode }) => {
       globals: true,
       environment: "jsdom",
       setupFiles: "./tests/setup.ts",
+      // agent worktrees live under .claude/ and must not be collected twice
+      exclude: ["**/node_modules/**", "**/.claude/**"],
     },
     root: "./",
     base: "/",
