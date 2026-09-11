@@ -25,6 +25,7 @@ import {
   type BuildableUnit,
   type EventLine,
   type PlayerCtx,
+  NUKE_TYPES,
 } from "../types";
 
 /** events.jsonl line for one MCP tool call. Folded into types.ts by P3. */
@@ -530,6 +531,17 @@ export function createArenaServer(opts: ArenaServerOpts): {
         "right now; observe.buildCosts shows every price so you can save up.",
       { unit: z.enum(BUILDABLE_UNITS) },
       (a) => ({ type: "build", unit: a.unit as Action["unit"] }),
+    );
+
+    action(
+      "nuke",
+      "Launch a warhead from one of your Missile Silos at a player's territory (the arena aims " +
+        "at the middle of their land). Atom Bomb 750k gold, Hydrogen Bomb 5M, MIRV 25M+ " +
+        "(350 warheads, needs an owned target tile). Destroys land into permanent fallout, kills " +
+        "troops in the blast, and enemy SAM Launchers can intercept it. Nuking an ally breaks the " +
+        "alliance and marks you a traitor. See observe.nukes for silos, prices and what you can launch now.",
+      { target: z.number().int(), nuke: z.enum(NUKE_TYPES) },
+      (a) => ({ type: "nuke", target: a.target as number, nuke: a.nuke as Action["nuke"] }),
     );
 
     action(

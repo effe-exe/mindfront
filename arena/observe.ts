@@ -17,6 +17,8 @@ import {
   type ActResult,
   type BBox,
   BUILDABLE_UNITS,
+  NUKE_TYPES,
+  type NukeType,
   type BuildableUnit,
   type Compass,
   type Decision,
@@ -31,6 +33,12 @@ import {
 
 // arena's BuildableUnit strings are the same literals as UnitType enum values;
 // spelled out explicitly so a UnitType rename doesn't silently desync us.
+const NUKE_MAP: Record<NukeType, UnitType> = {
+  "Atom Bomb": UnitType.AtomBomb,
+  "Hydrogen Bomb": UnitType.HydrogenBomb,
+  MIRV: UnitType.MIRV,
+};
+
 export const UNIT_MAP: Record<BuildableUnit, UnitType> = {
   City: UnitType.City,
   Port: UnitType.Port,
@@ -327,6 +335,16 @@ export function observe(
     if (affordable && placeable) canBuild.push({ unit, cost: Number(cost) });
   }
 
+  const silos = me.unitCount(UnitType.MissileSilo);
+  const nukeCosts = {} as Record<NukeType, number>;
+  const nukesAffordable: NukeType[] = [];
+  for (const n of NUKE_TYPES) {
+    const c = game.unitInfo(NUKE_MAP[n]).cost(game, me);
+    nukeCosts[n] = Number(c);
+    if (silos > 0 && c <= gold) nukesAffordable.push(n);
+  }
+  const nukes = { silos, costs: nukeCosts, affordable: nukesAffordable };
+
   const tiles = me.numTilesOwned();
   const totalLand = game.totalLandTiles();
   const tick = game.ticks();
@@ -409,6 +427,7 @@ export function observe(
     canBuild,
     buildCosts,
     build,
+    nukes,
     recentEvents: recentEvents.slice(-8),
     globalEvents: globalEvents.slice(-10),
     lastResult: ctx.lastResult,
@@ -569,14 +588,18 @@ function translate(game: Game, me: Player, action: Action): Translated {
           : needsBorder
             ? me.borderTiles()
             : me.tiles();
+      // Sample ~200 tiles spread over the whole pool: the first tiles of a
+      // territory sit around the spawn where structures already crowd each other.
+      const n = "size" in pool ? pool.size : pool.length;
+      const stride = Math.max(1, Math.floor(n / 200));
       let tile: TileRef | undefined;
-      let scanned = 0;
+      let i = 0;
       for (const t of pool) {
+        if (i++ % stride !== 0) continue;
         if (me.canBuild(unitType, t) !== false) {
           tile = t;
           break;
         }
-        if (++scanned >= 200) break;
       }
       if (tile === undefined)
         return {
@@ -588,6 +611,42 @@ function translate(game: Game, me: Player, action: Action): Translated {
                 : `no free spot for ${action.unit} (keep distance from your other structures)`,
         };
       return { intent: { type: "build_unit", unit: unitType, tile } };
+    }
+
+    case "nuke": {
+      if (action.nuke === undefined) return { reason: "nuke needs a warhead type" };
+      const t = resolveTarget(game, action.target);
+      if (!t) return { reason: `target ${action.target} does not exist` };
+      if (!t.isAlive()) return { reason: `target ${action.target} is no longer alive` };
+      if (me.isAlliedWith(t))
+        return { reason: `target ${action.target} is your ally; break_alliance first` };
+      if (me.unitCount(UnitType.MissileSilo) === 0)
+        return { reason: "you have no Missile Silo; build one first" };
+      // Aim at the tile of theirs closest to the middle of their territory.
+      const box = t.largestClusterBoundingBox;
+      const cx = box ? (box.min.x + box.max.x) / 2 : null;
+      const cy = box ? (box.min.y + box.max.y) / 2 : null;
+      let best: TileRef | undefined;
+      let bestD = Infinity;
+      let k = 0;
+      const total = t.numTilesOwned();
+      const step = Math.max(1, Math.floor(total / 400));
+      for (const tile of t.tiles()) {
+        if (k++ % step !== 0) continue;
+        const d = cx === null ? 0 : Math.abs(game.x(tile) - cx) + Math.abs(game.y(tile) - (cy as number));
+        if (d < bestD) {
+          bestD = d;
+          best = tile;
+          if (cx === null) break;
+        }
+      }
+      if (best === undefined) return { reason: `target ${action.target} owns no land` };
+      const unitType = NUKE_MAP[action.nuke];
+      if (me.canBuild(unitType, best) === false)
+        return {
+          reason: `cannot launch ${action.nuke} now (need ${Number(game.unitInfo(unitType).cost(game, me))} gold, a ready silo, and a target outside spawn immunity)`,
+        };
+      return { intent: { type: "build_unit", unit: unitType, tile: best } };
     }
 
     case "emoji": {

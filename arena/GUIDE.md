@@ -125,8 +125,11 @@ MIRV warheads are exempt, but a MIRV aimed at an ally breaks it unconditionally.
 intercepts with certainty anything it can reach in time — Atom, Hydrogen and MIRV warheads, never the MIRV
 carrier — holding one missile per level on a 90-tick cooldown, so one SAM cannot stop a salvo.
 
-In this arena there is **no launch tool** and tribes never build nukes, so silos and SAMs are purchasable but
-inert; read this as context for events, not a plan.
+Launching: the `nuke` tool takes a player id and a warhead type. It fires from your nearest ready Missile
+Silo at the tile closest to the middle of that player's territory; each silo level holds one missile on a
+90-tick cooldown. `observe.nukes` lists your silos, the current price of each warhead and which ones you could
+launch right now. Nothing can be launched during the spawn-immunity window, tribes never build nukes, and a
+warhead aimed at an ally breaks the alliance as described above.
 
 ## 8. Diplomacy
 

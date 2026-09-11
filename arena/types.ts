@@ -151,6 +151,8 @@ export interface Obs {
   canBuild: { unit: BuildableUnit; cost: number }[];
   /** current gold price of every structure, affordable or not */
   buildCosts: Record<BuildableUnit, number>;
+  /** nuclear: silos you own, current price of each warhead, which you could launch now */
+  nukes: { silos: number; costs: Record<NukeType, number>; affordable: NukeType[] };
   /** per structure: can you pay for it, and is there a legal tile for it right now */
   build: Record<BuildableUnit, { cost: number; affordable: boolean; placeable: boolean; note: string }>;
   /** last ≤8 human-readable events involving me */
@@ -174,6 +176,9 @@ export const BUILDABLE_UNITS = [
 ] as const;
 export type BuildableUnit = (typeof BUILDABLE_UNITS)[number];
 
+export const NUKE_TYPES = ["Atom Bomb", "Hydrogen Bomb", "MIRV"] as const;
+export type NukeType = (typeof NUKE_TYPES)[number];
+
 export const ACTION_TYPES = [
   "attack",
   "expand",
@@ -185,6 +190,7 @@ export const ACTION_TYPES = [
   "build",
   "emoji",
   "chat",
+  "nuke",
   "wait",
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];
@@ -204,6 +210,8 @@ export const ActionSchema = z
     emoji: z.string().optional(),
     /** quick chat key, must satisfy QuickChatKeySchema (resources/QuickChat.json) */
     key: z.string().optional(),
+    /** which warhead to launch (nuke); needs a Missile Silo and the gold */
+    nuke: z.enum(NUKE_TYPES).optional(),
   })
   .strict();
 export type Action = z.infer<typeof ActionSchema>;
@@ -239,6 +247,7 @@ export const ACT_TOOL_PARAMETERS = {
           unit: { enum: [...BUILDABLE_UNITS] },
           emoji: { type: "string" },
           key: { type: "string" },
+          nuke: { enum: [...NUKE_TYPES] },
         },
       },
     },

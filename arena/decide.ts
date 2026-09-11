@@ -275,6 +275,19 @@ export const sanitize: Sanitize = (decision, obs) => {
           reason = `target ${action.target} is not a known id`;
         }
         break;
+      case "nuke":
+        if (action.nuke === undefined) {
+          reason = "nuke needs a warhead: Atom Bomb, Hydrogen Bomb or MIRV";
+        } else if (action.target === undefined || !knownIds.has(action.target)) {
+          reason = `target ${action.target} is not a visible player id`;
+        } else if (allyIds.has(action.target)) {
+          reason = `you are allied with ${action.target}; break_alliance first`;
+        } else if (obs.nukes.silos === 0) {
+          reason = `no Missile Silo; build one first (${obs.build["Missile Silo"].cost} gold)`;
+        } else if (!obs.nukes.affordable.includes(action.nuke)) {
+          reason = `${action.nuke} costs ${obs.nukes.costs[action.nuke]} gold; you have less`;
+        }
+        break;
       case "expand":
       case "wait":
         break;
@@ -416,6 +429,7 @@ if (
       Factory: { cost: 250000, affordable: false, placeable: true, note: "need gold" },
       Warship: { cost: 250000, affordable: false, placeable: false, note: "needs a Port; you have none" },
     },
+    nukes: { silos: 0, costs: { "Atom Bomb": 750000, "Hydrogen Bomb": 5000000, MIRV: 25000000 }, affordable: [] },
     recentEvents: [],
     globalEvents: [],
     lastResult: "",
