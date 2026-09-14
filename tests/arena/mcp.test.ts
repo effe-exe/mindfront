@@ -62,7 +62,6 @@ function makeServer() {
     ctx: ctx(),
     recentEvents: () => [],
     send: (i) => sent.push(i),
-    say: () => {},
   };
   return createArenaServer({
     game: () => game,
@@ -121,7 +120,11 @@ describe("arena/mcp", () => {
       "upgrade",
       "emoji",
       "chat",
-      "say",
+      "embargo",
+      "move_warship",
+      "retreat",
+      "nuke",
+      "spawn",
     ]) {
       expect(names).toContain(expected);
     }
@@ -276,13 +279,12 @@ describe("arena/mcp", () => {
     expect(sent).toHaveLength(1);
   });
 
-  test("say emits a tool event line", async () => {
-    expect(await call("say", { text: "hello world" })).toEqual({ ok: true });
+  test("an action emits a tool event line", async () => {
+    await call("expand", { ratio: 0.3 });
     const line = events[events.length - 1] as ToolLine;
     expect(line.kind).toBe("tool");
-    expect(line.tool).toBe("say");
+    expect(line.tool).toBe("expand");
     expect(line.player).toBe("Tester");
-    expect(line.ok).toBe(true);
   });
 
   test("serves MCP over HTTP with a bearer token", async () => {

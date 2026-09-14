@@ -30,7 +30,7 @@ type FeedLine =
     };
 
 /** reads of state are noise in the feed; actions and inspections are the story */
-const HIDDEN_TOOLS = new Set(["observe", "rules", "game_info", "map_overview", "say"]);
+const HIDDEN_TOOLS = new Set(["observe", "rules", "game_info", "map_overview"]);
 
 const MAX_LINES = 40;
 

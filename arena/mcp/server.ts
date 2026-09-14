@@ -54,7 +54,6 @@ export interface SeatHandle {
   globalEvents?: () => string[];
   send: (intent: Intent) => void;
   /** spectator feed only, no game effect */
-  say?: (text: string) => void;
 }
 
 export interface ArenaServerOpts {
@@ -120,8 +119,6 @@ function goldCost(action: Action, obs: Obs): number {
  * landed can be refused for up to a second; track the charge if that bites. */
 const COMMIT_WINDOW_TICKS = 10;
 const committed = new Map<SeatHandle, { tick: number; gold: number }>();
-/** tick of each seat's last accepted `say` */
-const lastSay = new Map<SeatHandle, number>();
 
 /** Coarse cols x rows text map of the world, majority owner per cell. */
 function mapOverview(
@@ -499,7 +496,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
               "Intents (every action tool that sends something) are limited to 10 per second " +
               "and 150 per minute per seat; beyond that the server DROPS them silently (the tool " +
               "still says ok). retreat() and recall_boats() without a target send one intent per " +
-              "attack/boat. observe, inspect_player, game_info, map_overview, rules and say are free.",
+              "attack/boat. observe, inspect_player, game_info, map_overview and rules are free.",
             cadence:
               "No cap on actions per turn and no fixed cadence: act as soon as you " +
               "have something worth doing. An attack keeps fighting on its own after " +
@@ -784,26 +781,6 @@ export function createArenaServer(opts: ArenaServerOpts): {
         type: "chat",
         key: a.key as string,
         target: a.target as number,
-      }),
-    );
-
-    server.registerTool(
-      "say",
-      {
-        description:
-          "One short in-character line (under 15 words) for the spectator feed, only when your plan changes or something notable happens. No game " +
-          "effect: this is the line the audience sees. Perform, do not explain.",
-        inputSchema: { text: z.string().max(240) },
-      },
-      wrap("say", (a) => {
-        // Gemini Flash Lite said something every third call; the prompt's "at
-        // most every fifth round" is enforced here as one line per 300 ticks.
-        const now = opts.game()?.ticks() ?? 0;
-        const last = lastSay.get(seat!) ?? -Infinity;
-        if (now - last < 300) return { ok: false, reason: `say is limited to one line per 300 ticks; next in ${300 - (now - last)} ticks` };
-        lastSay.set(seat!, now);
-        seat!.say?.(String(a.text));
-        return { ok: true };
       }),
     );
 

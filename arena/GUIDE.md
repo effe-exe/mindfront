@@ -6,11 +6,11 @@
 
 1. Win: >80% of non-fallout land at any 10-tick check (`percentageTilesOwnedToWin`), else most tiles when `game.minutesLeft` ends (the engine clock skips the 60 s spawn phase: ~60 s after it reads 0; 170-min hard cap). Tribes and nations count and can win.
 2. Death: 0 tiles, or any attack leaving a player under 100 tiles (§8); everything lost.
-3. No action cap or cadence; internal seats ≤8 tool calls per round, rounds ≥1 s apart. Intents (every sending tool; read-only tools and `say` are free) ≤10/s and ≤150/min per seat, silently dropped beyond (`ClientMsgRateLimiter`); `retreat()`/`recall_boats()` without a target send one per attack/boat. Attacks and boats run on after one send; never re-send a running one.
+3. No action cap or cadence; internal seats ≤8 tool calls per round, rounds ≥1 s apart. Intents (every sending tool; read-only tools are free) ≤10/s and ≤150/min per seat, silently dropped beyond (`ClientMsgRateLimiter`); `retreat()`/`recall_boats()` without a target send one per attack/boat. Attacks and boats run on after one send; never re-send a running one.
 4. Every `target` = a numeric `id` from the current `observe`. Actions return `{ok:true}` or `{ok:false, reason}`; drops cost nothing. Gold is charged a tick after the send, so purchases in the same round are checked against one purse (the second is refused, not silently lost).
 5. Spawn phase 600 ticks (60 s; a cold model round can take 20–30 s, so call `spawn` first, prose after): `observe` = `{phase:"spawn", ticksLeft, myPick, picks, map}`; `spawn(col,row)`, re-pick freely; other tools refuse; no pick → placed far from everyone.
 6. Briefing: manual first, then a written plan that returns in every observation as `plan`; the spawn phase waits for every seat's plan.
-7. `alerts` = first key: what needs a decision now, severest first. `notes` = last `say` text; `lastResult` = last round's tool calls and results (≤5).
+7. `alerts` = first key: what needs a decision now, severest first. `lastResult` = last round's tool calls and results (≤5).
 8. `emoji` / `chat` `key`: only the `Valid emoji:` / `Valid chat keys:` lists after this manual.
 
 ## 1. Clock
@@ -89,7 +89,7 @@ Defence: only a SAM Launcher stops a warhead, with certainty, when the impact ti
 
 ## 9. Tools
 
-Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor` view of a visible id + `sharesBorder`), `game_info` (constants, prices), `map_overview(cols≤24, rows≤12)` (grid: `~` sea, `.` unclaimed, `me`, `L<id>` AI, `N<id>` nation, `T<id>` tribe, legend of cells; the only spatial picture). `say(text)`: spectator feed only.
+Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor` view of a visible id + `sharesBorder`), `game_info` (constants, prices), `map_overview(cols≤24, rows≤12)` (grid: `~` sea, `.` unclaimed, `me`, `L<id>` AI, `N<id>` nation, `T<id>` tribe, legend of cells; the only spatial picture).
 
 | Tool | Args | Precondition | Effect | Drop reasons |
 | --- | --- | --- | --- | --- |
@@ -133,7 +133,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `coastal`, `sharesSea`, `sharedBorderTiles`, `direction`, `distance`, `structures` | owns ocean shore (sampled); their shore and mine touch the same water body = `boat` legal; my border tiles touching them (exact, whole border); compass and Manhattan distance of cluster centres; Σ levels of finished structures | port; boat; front width = speed (§3); boat ticks ≈ distance; posts, silos |
 | `canBuild[{unit,cost}]`, `buildCosts`, `build[unit]{cost,affordable,placeable,upgradable,note}`, `nukes{silos,costs,affordable}` | affordable-and-placeable now; every price; why a build fails; levellable type; silos, warhead prices, launchable now | `build`; `upgrade`; `nuke` |
 | `recentEvents[]`, `globalEvents[]` | ≤8 involving me: attacks, boats and nukes launched at me, conquests, alliances, betrayals, emoji/chat to me; ≤10 map-wide (`t<tick>` prefix) | threats; who fights whom |
-| `plan`, `notes`, `lastResult` | §0.6–0.7 | continuity |
+| `plan`, `lastResult` | §0.6–0.7 | continuity |
 
 ## 11. Decision defaults (starting points, not rules)
 

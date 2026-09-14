@@ -322,19 +322,6 @@ const arena = createArenaServer({
           s.lastActionTick = game?.ticks() ?? 0;
           send(s, { type: "intent", intent });
         },
-        say: (text: string) =>
-          writeEvent({
-            kind: "decision",
-            t: game?.ticks() ?? 0,
-            player: s.name,
-            model: s.model,
-            latencyMs: 0,
-            intervalTicks: flags.interval,
-            fallback: false,
-            reasoning: text,
-            sent: [],
-            dropped: [],
-          }),
       },
     ]),
   ),

@@ -88,13 +88,12 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   const ctxLike = { model, name, persona } as PlayerCtx;
   const baseSystemPrompt =
     systemPrompt(ctxLike) +
-    "\nYou act by calling tools. While observe reports phase \"spawn\", pick your start with `spawn(col,row)` from the grid it shows (consider where others already are), then wait for the match. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act, and `say` only when your plan changes or something notable happens (at most every fifth round, under 15 words, in character). Do not narrate routine moves. Stop calling tools when you are done for this round.";
+    "\nYou act by calling tools. While observe reports phase \"spawn\", pick your start with `spawn(col,row)` from the grid it shows (consider where others already are), then wait for the match. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act. Do not narrate: tool calls are the only output that matters. Stop calling tools when you are done for this round.";
 
   // The manual is identical every round: mark it cacheable (Anthropic needs the
   // explicit breakpoint, ~90% off cached input; OpenAI/Google/xAI cache anyway).
   const systemMessage = { role: "system", content: [{ type: "text", text: baseSystemPrompt, cache_control: { type: "ephemeral" } }] };
 
-  let notes = "";
   let lastResult = "";
 
   // Pre-match briefing: the manual is the system prompt; make the model process
@@ -145,7 +144,6 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
     let fallback = false;
     let calls = 0;
     const resultsSummary: string[] = [];
-    let sawSay: string | undefined;
 
     try {
       const obsRaw = extractText(await client.callTool({ name: "observe", arguments: {} }));
@@ -162,7 +160,6 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
         continue;
       }
       obsObj.plan = plan;
-      obsObj.notes = notes;
       obsObj.lastResult = lastResult;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -233,7 +230,6 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
           try {
             const callRes = await client.callTool({ name: toolName, arguments: args });
             resultText = extractText(callRes);
-            if (toolName === "say" && typeof args.text === "string") sawSay = args.text;
           } catch (err) {
             resultText = `error: ${String(err).slice(0, 200)}`;
           }
@@ -248,7 +244,6 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
     }
 
     if (resultsSummary.length > 0) lastResult = resultsSummary.slice(-5).join("; ");
-    if (sawSay !== undefined) notes = sawSay;
 
     onRound?.({ latencyMs: Date.now() - roundStart, calls, fallback });
 
@@ -312,14 +307,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         return { content: [{ type: "text", text: "ok" }] };
       },
     );
-    server.registerTool(
-      "say",
-      { description: "say", inputSchema: { text: z.string() } },
-      async (args) => {
-        calls.push({ tool: "say", args });
-        return { content: [{ type: "text", text: "ok" }] };
-      },
-    );
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -351,7 +338,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
                   tool_calls: [
                     { id: "1", function: { name: "observe", arguments: "{}" } },
                     { id: "2", function: { name: "expand", arguments: JSON.stringify({ ratio: 0.3 }) } },
-                    { id: "3", function: { name: "say", arguments: JSON.stringify({ text: "go" }) } },
                   ],
                 },
               },
@@ -401,10 +387,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     assert.ok(
       calls.some((c) => c.tool === "expand"),
       "expand should have been invoked on the fake server",
-    );
-    assert.ok(
-      calls.some((c) => c.tool === "say"),
-      "say should have been invoked on the fake server",
     );
 
     await client.close();
