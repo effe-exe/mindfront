@@ -208,7 +208,9 @@ describe("arena/mcp", () => {
   test("donate gives an ally troops or gold, once per 10 s", async () => {
     expect((await call("donate", { target: player2.smallID(), troops: 100 })).reason).toMatch(/not your ally/);
     player1.createAllianceRequest(player2)?.accept();
-    expect((await call("donate", { target: player2.smallID() })).reason).toMatch(/exactly one/);
+    expect((await call("donate", { target: player2.smallID() })).reason).toMatch(/troops or gold/);
+    expect((await call("donate", { target: player2.smallID(), troops: 100, gold: 1 })).reason).toBeUndefined(); // gold 1 = schema placeholder
+    sent.length = 0;
     expect(await call("donate", { target: player2.smallID(), troops: 100 })).toEqual({ ok: true });
     expect(sent[0]).toEqual({ type: "donate_troops", recipient: player2.id(), troops: 100 });
     player1.addGold(5000n);

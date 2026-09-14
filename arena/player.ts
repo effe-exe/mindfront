@@ -112,7 +112,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
       },
       body: JSON.stringify({
         model,
-        max_tokens: 900,
+        max_tokens: 1500, // reasoning tokens count against it: 900 cut Gemini Flash Lite mid-plan
         ...(NO_REASONING.has(model) ? {} : { reasoning: { effort: "low" } }),
         messages: [
           systemMessage,

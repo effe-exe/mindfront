@@ -799,10 +799,14 @@ function translate(game: Game, me: Player, action: Action): Translated {
       // and troops at what I hold (removeGold/removeTroops clamp).
       const t = resolveTarget(game, action.target);
       if (!t) return { reason: `target ${action.target} does not exist` };
-      const troops = action.troops ?? 0;
-      const gold = action.gold ?? 0;
-      if ((troops > 0) === (gold > 0))
-        return { reason: "donate needs exactly one of troops or gold, a positive whole number" };
+      // Strict tool schemas make some models fill the unused field with 1
+      // (GPT Luna: troops 300000, gold 1, eleven times): ≤1 means "not this one".
+      const troops = (action.troops ?? 0) > 1 ? action.troops! : 0;
+      const gold = (action.gold ?? 0) > 1 ? action.gold! : 0;
+      if (troops > 0 && gold > 0)
+        return { reason: "one gift per call: donate troops OR gold, not both (they share a 100-tick cooldown)" };
+      if (troops === 0 && gold === 0)
+        return { reason: "donate needs troops or gold, a whole number above 1" };
       if (!me.isAlliedWith(t))
         return { reason: `${action.target} is not your ally; donations go to allies only` };
       if (troops > 0 ? !me.canDonateTroops(t) : !me.canDonateGold(t))
