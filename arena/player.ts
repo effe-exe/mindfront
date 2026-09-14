@@ -90,6 +90,10 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
     systemPrompt(ctxLike) +
     "\nYou act by calling tools. While observe reports phase \"spawn\", pick your start with `spawn(col,row)` from the grid it shows (consider where others already are), then wait for the match. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act, and `say` only when your plan changes or something notable happens (at most every fifth round, under 15 words, in character). Do not narrate routine moves. Stop calling tools when you are done for this round.";
 
+  // The manual is identical every round: mark it cacheable (Anthropic needs the
+  // explicit breakpoint, ~90% off cached input; OpenAI/Google/xAI cache anyway).
+  const systemMessage = { role: "system", content: [{ type: "text", text: baseSystemPrompt, cache_control: { type: "ephemeral" } }] };
+
   let notes = "";
   let lastResult = "";
 
@@ -111,7 +115,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
         max_tokens: 900,
         ...(NO_REASONING.has(model) ? {} : { reasoning: { effort: "low" } }),
         messages: [
-          { role: "system", content: baseSystemPrompt },
+          systemMessage,
           {
             role: "user",
             content:
@@ -163,7 +167,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const messages: any[] = [
-        { role: "system", content: baseSystemPrompt },
+        systemMessage,
         { role: "user", content: JSON.stringify(obsObj) },
       ];
 
