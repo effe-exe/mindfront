@@ -608,7 +608,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
     action(
       "break_alliance",
       "Break an alliance. Brands you a traitor for 30 seconds: attackers take half " +
-        "losses against you and tribes hunt you. Only ids in observe.me.allies.",
+        "losses against you, tribes hunt you, nations refuse your offers and may break with you. Only ids in observe.me.allies.",
       { target: z.number().int() },
       (a) => ({ type: "break_alliance", target: a.target as number }),
     );
@@ -616,7 +616,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
     action(
       "extend_alliance",
       "Ask an ally to renew: when both sides have called this, the alliance resets to a full " +
-        "5 minutes from that moment (no time window; tribes always agree within ~8 s). Best in the " +
+        "5 minutes from that moment (no time window; tribes always agree within ~8 s, nations answer by their alliance rules). Best in the " +
         "last 300 ticks; observe.me.allianceExpiry shows who has already asked. Only ids in observe.me.allies.",
       { target: z.number().int() },
       (a) => ({ type: "extend_alliance", target: a.target as number }),
@@ -624,7 +624,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
 
     action(
       "donate",
-      "Give an ally troops OR gold (exactly one, a whole number). Allies only; one donation per " +
+      "Give an ally troops OR gold (one of them, a whole number; a 0 or 1 in the other field is ignored). Allies only; one donation per " +
         "ally per 10 s (gold and troops share the cooldown). Troops are capped at the room under " +
         "their troop cap, and a gift of at least ~1/12 of their cap raises their relation to you " +
         "by 50; gold raises it 5 per 2,500 (chunk grows with match time). Use it to prop up an ally " +

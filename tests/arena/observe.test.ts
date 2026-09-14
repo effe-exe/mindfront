@@ -410,7 +410,7 @@ describe("arena/observe build Warship", () => {
     expect(g.isWater(intent.tile)).toBe(true);
 
     // move_warship: same sea ok, land refused, someone else's id refused.
-    const ship = p.buildUnit(UnitType.Warship, intent.tile, {});
+    const ship = p.buildUnit(UnitType.Warship, intent.tile, { patrolTile: intent.tile });
     const obs2 = observe(g, p, ctx(p), []);
     expect(obs2.me.units.some((u) => u.id === ship.id() && u.type === "Warship")).toBe(true);
     const move = (id: number, x: number, y: number) =>
