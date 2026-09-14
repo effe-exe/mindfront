@@ -380,6 +380,7 @@ if (
     relation: "neutral",
     relationToMe: "neutral",
     allied: false,
+    teammate: false,
     attackingMe: false,
     coastal: true,
     sharesSea: true,
@@ -413,6 +414,7 @@ if (
     me: {
       id: 1,
       name: "Tester",
+      team: null,
       tiles: 1000,
       freeLandAtBorder: 40,
       landPct: 0.1,

@@ -16,6 +16,13 @@ const NO_REASONING = new Set<string>();
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
+/** USD spent by every seat in this process (OpenRouter reports `usage.cost` per
+ * response) and the ceiling after which seats stop calling models. */
+export const spend = { usd: 0, budgetUsd: Infinity };
+function charge(data: { usage?: { cost?: number } } | undefined): void {
+  spend.usd += data?.usage?.cost ?? 0;
+}
+
 export interface RunPlayerOpts {
   url: string;
   token: string;
@@ -112,6 +119,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
       body: JSON.stringify({
         model,
         max_tokens: 1500, // reasoning tokens count against it: 900 cut Gemini Flash Lite mid-plan
+        usage: { include: true },
         ...(NO_REASONING.has(model) ? {} : { reasoning: { effort: "low" } }),
         messages: [
           systemMessage,
@@ -130,6 +138,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
     });
     if (res.ok) {
       const data = await res.json();
+      charge(data);
       plan = String(data?.choices?.[0]?.message?.content ?? "").trim().slice(0, 2000);
     } else {
       console.warn(`player[${model}]: briefing HTTP ${res.status}`);
@@ -139,7 +148,14 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   }
   onBriefed?.(plan);
 
+  let overBudget = false;
   while (!signal?.aborted) {
+    if (spend.usd >= spend.budgetUsd) {
+      if (!overBudget) console.warn(`player[${model}]: match spend $${spend.usd.toFixed(2)} reached the --budget ceiling; no more model calls`);
+      overBudget = true;
+      await sleep(5000, signal);
+      continue;
+    }
     const roundStart = Date.now();
     let fallback = false;
     let calls = 0;
@@ -181,6 +197,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
           body: JSON.stringify({
             model,
             max_tokens: 1500,
+            usage: { include: true },
             // Some models have no provider that accepts the reasoning knob; retried without it below.
             ...(withReasoning ? { reasoning: { effort: "low" } } : {}),
             // Only providers that honor tools/tool_choice; Llama was routed to one that did not.
@@ -203,6 +220,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
           break roundLoop;
         }
         const data = await res.json();
+        charge(data);
         // "low" effort is a hint some models ignore (DeepSeek v3.2: 1,200 reasoning
         // tokens, 49 s per round); once one over-thinks, stop asking it to think.
         const reasoningTokens = data?.usage?.completion_tokens_details?.reasoning_tokens ?? 0;

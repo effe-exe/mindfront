@@ -349,6 +349,7 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
       relation: p === me ? "neutral" : RELATION_NAMES[me.relation(p)],
       relationToMe: p === me ? "neutral" : RELATION_NAMES[p.relation(me)],
       allied: me.isAlliedWith(p),
+      teammate: p !== me && me.isOnSameTeam(p),
       attackingMe: incoming.has(id),
       coastal: shoreWater(game, p).ocean,
       sharesSea: p !== me && [...shoreWater(game, p).comps].some((c) => mySeas.has(c)),
@@ -582,6 +583,7 @@ export function observe(
     me: {
       id: me.smallID(),
       name: me.name(),
+      team: me.team(),
       tiles,
       freeLandAtBorder,
       landPct: totalLand > 0 ? round1((tiles / totalLand) * 100) : 0,
@@ -684,6 +686,7 @@ function resolveTarget(game: Game, id: number | undefined): Player | undefined {
 
 /** Why canAttackPlayer(t) is false, and what to do instead. */
 function blockedReason(game: Game, me: Player, t: Player): string {
+  if (me.isOnSameTeam(t)) return `${t.smallID()} is on your team; team members can never attack each other`;
   if (me.isAlliedWith(t)) return `${t.smallID()} is your ally; break_alliance first if you want to attack`;
   const left = Math.max(1, Math.round(game.config().spawnImmunityDuration() - game.elapsedGameSeconds() * 10));
   return `${t.smallID()} is under spawn immunity for ${left} more ticks (AI seats and nations; tribes are attackable now)`;
@@ -791,6 +794,7 @@ function translate(game: Game, me: Player, action: Action): Translated {
       if (!me.canSendAllianceRequest(t)) {
         // PlayerImpl.canSendAllianceRequest, in its order of checks.
         if (!t.isAlive()) return { reason: `${action.target} is dead` };
+        if (me.isOnSameTeam(t)) return { reason: `${action.target} is on your team already; no alliance needed` };
         if (me.isAlliedWith(t)) return { reason: `you are already allied with ${action.target}` };
         const pending = me.outgoingAllianceRequests().find((r) => r.recipient() === t);
         if (pending !== undefined)
@@ -1059,6 +1063,7 @@ function translate(game: Game, me: Player, action: Action): Translated {
       const t = resolveTarget(game, action.target);
       if (!t) return { reason: `target ${action.target} does not exist` };
       if (!t.isAlive()) return { reason: `target ${action.target} is no longer alive` };
+      if (me.isOnSameTeam(t)) return { reason: `target ${action.target} is on your team` };
       if (me.isAlliedWith(t))
         return { reason: `target ${action.target} is your ally; break_alliance first` };
       if (me.unitCount(UnitType.MissileSilo) === 0)

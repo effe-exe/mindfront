@@ -26,6 +26,7 @@ import {
   GameMapType,
   GameMode,
   GameType,
+  HumansVsNations,
   Player,
   AllPlayers,
   UnitType,
@@ -58,7 +59,7 @@ import { NodeGameMapLoader } from "../tests/perf/fullgame/NodeGameMapLoader";
 import { systemPrompt } from "./decide";
 import { createArenaServer, ToolLine } from "./mcp/server";
 import { hasFreeLandBorder, trackHistory, recordNukeLaunch } from "./observe";
-import { runPlayer } from "./player";
+import { runPlayer, spend } from "./player";
 import { DEFAULT_INTERVAL_TICKS, EventLine, PlayerCtx, RosterEntry } from "./types";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -73,6 +74,10 @@ const flags = {
   /** scripted nations (real countries at their map position); 0 = none */
   nations: 0,
   difficulty: "Easy" as keyof typeof Difficulty,
+  /** USD ceiling for model calls in this match (OpenRouter usage.cost); Infinity = none */
+  budget: Infinity,
+  /** team mode: every seat on team Humans vs the nations on team Nations */
+  teams: false,
   interval: DEFAULT_INTERVAL_TICKS,
   timer: 40,
   recordsDir: "arena/records",
@@ -107,6 +112,12 @@ const flags = {
       case "--difficulty":
         flags.difficulty = next() as keyof typeof Difficulty;
         break;
+      case "--budget":
+        flags.budget = parseFloat(next());
+        break;
+      case "--teams":
+        flags.teams = true;
+        break;
       case "--interval":
         flags.interval = parseInt(next(), 10);
         break;
@@ -136,6 +147,7 @@ if (gameMap === undefined) throw new Error(`unknown map: ${flags.map}`);
 const gameMapSize = GameMapSize[flags.size as keyof typeof GameMapSize];
 if (gameMapSize === undefined) throw new Error(`unknown size: ${flags.size}`);
 
+spend.budgetUsd = flags.budget;
 const roster: RosterEntry[] = JSON.parse(
   fs.readFileSync(path.resolve(ROOT, flags.roster), "utf8"),
 );
@@ -205,8 +217,11 @@ const config: GameConfig = {
   gameMapSize,
   difficulty: Difficulty[flags.difficulty] ?? Difficulty.Easy,
   gameType: GameType.Private,
-  gameMode: GameMode.FFA,
-  nations: flags.nations > 0 ? flags.nations : "disabled",
+  gameMode: flags.teams ? GameMode.Team : GameMode.FFA,
+  // Humans vs Nations: the engine puts every seat on one team and every nation
+  // on the other (GameImpl); a private lobby needs the nation count spelled out.
+  ...(flags.teams ? { playerTeams: HumansVsNations } : {}),
+  nations: flags.nations > 0 ? flags.nations : flags.teams ? roster.length : "disabled",
   bots: flags.bots,
   // AI seats pick their own start during the spawn phase (spawn tool); tribes
   // are still placed by the engine.
@@ -522,7 +537,7 @@ async function onStart(info: GameStartInfo, missed: Turn[]) {
   );
   game = runner.game;
   console.debug = () => {};
-  console.log(`sim: ${game.nations().length} nations (${game.nations().map((n) => n.playerInfo.name).join(", ") || "none"}), ${info.config.bots} tribes`);
+  console.log(`sim: ${game.nations().length} nations (${game.nations().map((n) => n.playerInfo.name).join(", ") || "none"}), ${info.config.bots} tribes${flags.teams ? ", team mode Humans vs Nations" : ""}`);
   for (const seat of seats) {
     const p = game.playerByClientID(seat.clientID);
     if (p === null) {
@@ -657,7 +672,8 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     trackHistory(g);
     console.log(
       `[t=${gu.tick}] ` +
-        seats.map((s) => `${s.name}=${s.me?.numTilesOwned() ?? 0}`).join(" "),
+        seats.map((s) => `${s.name}=${s.me?.numTilesOwned() ?? 0}`).join(" ") +
+        ` $${spend.usd.toFixed(2)}`,
     );
   }
 
@@ -790,7 +806,7 @@ async function shutdown(reason: string) {
   }
   console.log(`events: ${eventsPath}`);
   console.log(
-    `summary: winner=${JSON.stringify(winner)} ticks=${game?.ticks() ?? 0} ` +
+    `summary: winner=${JSON.stringify(winner)} ticks=${game?.ticks() ?? 0} spend=$${spend.usd.toFixed(2)} ` +
       seats
         .map(
           (s) =>

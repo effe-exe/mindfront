@@ -69,6 +69,8 @@ export interface ObsNeighbor {
   /** THEIR ledger of me: what a nation acts on (attacks, embargoes, alliance answers, nuke targets) */
   relationToMe: Relation;
   allied: boolean;
+  /** team mode only: on my team (no attacks either way, shared win) */
+  teammate: boolean;
   attackingMe: boolean;
   /** owns a tile on an ocean shore (sampled) */
   coastal: boolean;
@@ -116,6 +118,8 @@ export interface Obs {
   me: {
     id: number;
     name: string;
+    /** team mode: "Humans" (every AI seat) vs "Nations"; null in free-for-all */
+    team: string | null;
     tiles: number;
     /** distinct unclaimed land tiles touching your border (sampled); ~0 = boxed in or on an island */
     freeLandAtBorder: number;

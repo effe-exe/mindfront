@@ -117,7 +117,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | --- | --- | --- |
 | `alerts[]` | NUKED (warheads launched at me in the last 90 s, by whom, my SAM cover); UNDER ATTACK (who, troops, % of my army); BOAT INCOMING (who, troops, ticks out); ALLIANCE REQUEST; ALLIANCE expiring ≤300 ticks (who asked to renew); NO FREE LAND; TROOPS ≥85% OF CAP | handle first |
 | `tick`, `minute`, `game.tick`, `game.minutesLeft`, `game.totalLandTiles`, `game.mapWidth`, `game.mapHeight` | clock (`minutesLeft` null = untimed); win denominator pre-fallout; map extent | endgame (§0.1); scale for `landPct`, `center`, `bbox` |
-| `me.id`, `me.name`, `me.center{x,y}`, `me.bbox{minX,minY,maxX,maxY}` | my id (`me` on `map_overview`); centre and box of my largest cluster | never a target; with `direction`/`distance`, who is where |
+| `me.id`, `me.name`, `me.team`, `me.center{x,y}`, `me.bbox{minX,minY,maxX,maxY}` | my id (`me` on `map_overview`); my team in team mode (§13) or null; centre and box of my largest cluster | never a target; with `direction`/`distance`, who is where |
 | `me.tiles`, `me.landPct`, `me.tilesDelta1m` | land; % of all; net tiles last minute | stalled → new target or route |
 | `me.freeLandAtBorder`, `unclaimedLandAdjacent` | distinct free tiles touching my whole border, exact, capped at 2,000; `expand` legal | ≈0 / false → boat or attack |
 | `me.troops`, `me.maxTroops`, `me.troopsPct`, `me.gold`, `me.goldIncomePerMin`, `me.income{baseGold,tradeGold,trainGold,lootGold}`, `me.tradePartnerPorts`, `me.aiOnMySea` | army, cap (§2), throttle; treasury; gold last minute, all sources; per minute by source (flat 60,000; ships; trains; conquest/piracy/gifts, one-off); partner Ports on my water now; AI players who can become partners (§4) | high pct → spend or City; what to buy; is trade/rail paying; `aiOnMySea` > 0 → Port early |
@@ -128,7 +128,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `me.immuneUntilTick`, `me.traitorTicksLeft`, `me.betrayals` | tick immunity ends (0 = over); ticks my traitor mark lasts (0 = none); lifetime count | AI attacks wait; tribe and cheap attacks while traitor |
 | `neighbors[]`, `reachableByBoat[]`, `leaderboard[]` | land-border players; ≤10 non-neighbours sharing a water body with my shore, nearest first; top 5 by tiles incl. me and tribes | `attack` ids; `boat` ids (any view with `sharesSea`); who wins on timer |
 | `id`, `name`, `kind`, `tiles`, `troops`, `maxTroops`, `troopsPct`, `gold` | id for every tool; `"llm"`, `"tribe"` or `"nation"` (§7); size, army, cap, throttle, treasury | tribe = cheap, full loot; nation = builds, allies, nukes, full loot; `troops/tiles` = density (§3); <100 tiles = dead |
-| `relation`, `relationToMe`, `allied`, `traitorTicksLeft`, `betrayals`, `allies[]` | my ledger of their acts on me (§7); their ledger of me (what a nation acts on); allied with me; ticks their traitor mark lasts; lifetime; their allies | trust; `relationToMe` hostile on a nation = it will embargo and attack me; traitor = half-cost target while > 0; avoid allies of the strong |
+| `relation`, `relationToMe`, `allied`, `teammate`, `traitorTicksLeft`, `betrayals`, `allies[]` | my ledger of their acts on me (§7); their ledger of me (what a nation acts on); allied with me; on my team (§13); ticks their traitor mark lasts; lifetime; their allies | trust; `relationToMe` hostile on a nation = it will embargo and attack me; traitor = half-cost target while > 0; avoid allies of the strong |
 | `attackingMe`, `attacking[]`, `attackedBy[]`, `tilesDelta1m` | attack on me; ids they attack; ids attacking them; their net tiles last minute | besieged or shrinking = cheap; growing = threat |
 | `coastal`, `sharesSea`, `sharedBorderTiles`, `direction`, `distance`, `structures` | owns ocean shore (sampled); their shore and mine touch the same water body = `boat` legal; my border tiles touching them (exact, whole border); compass and Manhattan distance of cluster centres; Σ levels of finished structures | port; boat; front width = speed (§3); boat ticks ≈ distance; posts, silos |
 | `canBuild[{unit,cost}]`, `buildCosts`, `build[unit]{cost,affordable,placeable,upgradable,note}`, `nukes{silos,costs,affordable}` | affordable-and-placeable now; every price; why a build fails; levellable type; silos, warhead prices, launchable now | `build`; `upgrade`; `nuke` |
@@ -150,6 +150,9 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 11. Every minute: main border covered? `troopsPct`? `goldIncomePerMin` above the 60,000 base? Which purchase removes the bottleneck?
 12. IF `game.minutesLeft` < 3: convert everything to tiles against tribes, unclaimed land and non-allies; never by breaking an alliance (§7 cascade), and never with the reserve if a nation borders me. The timer pays the tile leader: when I lead, the only way to lose is to start something.
 13. Nukes need an economy: silo + Atom Bomb = 1.75M, 29 minutes of base income; trade (§4) pays for it in minutes.
+14. Trade pays BOTH Port owners: my ships fund the nation I trade with as much as me. `embargo` the leader (`leaderboard[0]` when it is not me) and trade with the small; never feed a nation past 30% of the map.
+15. Nations take three tribes at once and never idle: send several attacks in one round (each call is its own front, `ratio` of what is left each time), keep `troopsPct` under 80 by spending, and re-check `leaderboard` every minute: a nation past 25% at minute 8 wins the timer unless boxed in, nuked or embargoed by everyone.
+16. Against Hard nations the first 5 minutes decide: they accept alliances 50% then; ally every bordering nation early, expand into tribes on every other side, and spend the first 1M on Cities and a Port facing a weak nation's Port.
 
 ## 12. Interactions (what changes what)
 
@@ -169,5 +172,9 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | Warship | sinks transports (1 HP) within 130 of its patrol point, captures trade ships, duels warships; ignores land |
 | Relation (mine) | pure bookkeeping for me; a nation's `relationToMe` decides its embargo, attack and nuke choices and its alliance answer |
 | Timer end | most tiles wins, fallout excluded from nobody's count; the 80% check runs every 10 ticks before that |
+
+## 13. Team mode (only when `me.team` is not null)
+
+Every AI seat is on team `Humans`, every nation on team `Nations`, tribes on team `Bot`. Teammates (`teammate: true`) can never attack each other (no alliance needed, no expiry), boats landing on a teammate turn back, nukes cannot be aimed at one, `donate` works between teammates, trade ships sail between teammates' Ports. Win: the team with more tiles when the timer ends, or >80% combined at any check; tribes cannot win. Nations on a team refuse alliances with the other team on Hard, embargo everyone outside their team, and nuke the strongest team. Coordinate through the map: teammates' `direction`/`distance` show who holds which front; a teammate under `incomingAttacks` from a nation is where the shared war is.
 
 <!-- prettier-ignore-end -->
