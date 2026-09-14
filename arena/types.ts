@@ -64,7 +64,10 @@ export interface ObsNeighbor {
   kind: "llm" | "tribe" | "nation";
   tiles: number;
   troops: number;
+  /** my ledger of their acts toward me (§7) */
   relation: Relation;
+  /** THEIR ledger of me: what a nation acts on (attacks, embargoes, alliance answers, nuke targets) */
+  relationToMe: Relation;
   allied: boolean;
   attackingMe: boolean;
   /** owns a tile on an ocean shore (sampled) */
@@ -225,6 +228,8 @@ export const ACTION_TYPES = [
   "extend_alliance",
   "donate",
   "recall_boats",
+  "embargo",
+  "move_warship",
   "build",
   "upgrade",
   "emoji",
@@ -250,8 +255,13 @@ export const ActionSchema = z
     /** donate: absolute gold to give an ally */
     gold: z.number().int().positive().optional(),
     unit: z.enum(BUILDABLE_UNITS).optional(),
-    /** upgrade: structure id from me.units; omitted = lowest-level completed one of that type */
+    /** upgrade: structure id from me.units; omitted = lowest-level completed one of that type. move_warship: the Warship id */
     id: z.number().int().optional(),
+    /** embargo: true = lift my embargo on target */
+    stop: z.boolean().optional(),
+    /** move_warship: new patrol point (map coordinates), water on the ship's own sea */
+    x: z.number().int().optional(),
+    y: z.number().int().optional(),
     /** emoji character, must exist in flattenedEmojiTable */
     emoji: z.string().optional(),
     /** quick chat key, must satisfy QuickChatKeySchema (resources/QuickChat.json) */
@@ -296,6 +306,9 @@ export const ACT_TOOL_PARAMETERS = {
           gold: { type: "integer", minimum: 1 },
           unit: { enum: [...BUILDABLE_UNITS] },
           id: { type: "integer" },
+          stop: { type: "boolean" },
+          x: { type: "integer" },
+          y: { type: "integer" },
           emoji: { type: "string" },
           key: { type: "string" },
           nuke: { enum: [...NUKE_TYPES] },

@@ -408,5 +408,36 @@ describe("arena/observe build Warship", () => {
     expect(intent.type).toBe("build_unit");
     expect(intent.unit).toBe(UnitType.Warship);
     expect(g.isWater(intent.tile)).toBe(true);
+
+    // move_warship: same sea ok, land refused, someone else's id refused.
+    const ship = p.buildUnit(UnitType.Warship, intent.tile, {});
+    const obs2 = observe(g, p, ctx(p), []);
+    expect(obs2.me.units.some((u) => u.id === ship.id() && u.type === "Warship")).toBe(true);
+    const move = (id: number, x: number, y: number) =>
+      toIntents(g, p, obs2, { reasoning: "", notes: "", actions: [{ type: "move_warship", id, x, y }] }, ctx(p));
+    expect(move(ship.id(), coast + 3, 12).intents[0]).toEqual({ type: "move_warship", unitIds: [ship.id()], tile: g.ref(coast + 3, 12) });
+    expect(move(ship.id(), coast - 2, 10).dropped[0].reason).toMatch(/is land/);
+    expect(move(ship.id() + 999, coast + 3, 12).dropped[0].reason).toMatch(/no Warship of yours/);
+  });
+});
+
+describe("arena/observe embargo", () => {
+  test("embargo starts and stops trade with a visible player", async () => {
+    const g = await setup("plains", { infiniteGold: true, instantBuild: true }, [
+      playerInfo("player1", PlayerType.Human),
+      playerInfo("player2", PlayerType.Human),
+    ]);
+    const p1 = g.player("player1");
+    const p2 = g.player("player2");
+    p1.conquer(g.ref(10, 10));
+    p2.conquer(g.ref(12, 10));
+    const obs = observe(g, p1, ctx(p1), []);
+    const call = (stop?: boolean) =>
+      toIntents(g, p1, obs, { reasoning: "", notes: "", actions: [{ type: "embargo", target: p2.smallID(), stop }] }, ctx(p1));
+    expect(call().intents[0]).toEqual({ type: "embargo", targetID: p2.id(), action: "start" });
+    expect(call(true).dropped[0].reason).toMatch(/no embargo/);
+    p1.addEmbargo(p2, false);
+    expect(call().dropped[0].reason).toMatch(/already embargo/);
+    expect(call(true).intents[0]).toEqual({ type: "embargo", targetID: p2.id(), action: "stop" });
   });
 });

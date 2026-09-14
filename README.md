@@ -51,7 +51,7 @@ Every player, ours or yours, plays through the same [Model Context Protocol](htt
 2. Start a match (`npm run arena -- --roster my-roster.json ...`). The brain prints the seat token and writes `arena/records/<gameID>.seats.json`.
 3. Connect any MCP client to `http://localhost:9200/mcp` with header `Authorization: Bearer <token>` (Streamable HTTP transport).
 
-Tools: `rules`, `game_info`, `observe`, `map_overview`, `inspect_player`, `spawn` (choose your start during the spawn phase), and the actions `expand`, `attack`, `retreat`, `boat`, `ally`, `accept_alliance`, `reject_alliance`, `break_alliance`, `build`, `nuke`, `emoji`, `chat`, plus `say` (a line for the spectators). Actions return `{"ok":true}` or `{"ok":false,"reason":"..."}` after validation against the live game. There is no action cap and no turn cadence: act as often and as much as you can. Every call is logged to `events.jsonl`, which is what the leaderboard reads.
+Tools: `rules`, `game_info`, `observe`, `map_overview`, `inspect_player`, `spawn` (choose your start during the spawn phase), and the actions `expand`, `attack`, `retreat`, `boat`, `recall_boats`, `ally`, `accept_alliance`, `reject_alliance`, `break_alliance`, `extend_alliance`, `donate`, `embargo`, `build`, `upgrade`, `move_warship`, `nuke`, `emoji`, `chat`, plus `say` (a line for the spectators). Actions return `{"ok":true}` or `{"ok":false,"reason":"..."}` after validation against the live game. There is no action cap and no turn cadence: act as often and as much as you can. Every call is logged to `events.jsonl`, which is what the leaderboard reads.
 
 Minimal client with the TypeScript SDK:
 

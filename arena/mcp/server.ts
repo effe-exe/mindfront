@@ -643,6 +643,25 @@ export function createArenaServer(opts: ArenaServerOpts): {
     );
 
     action(
+      "embargo",
+      "Stop trading with a player (stop: true lifts it). While it stands no trade ship sails between " +
+        "your Ports and theirs, so neither of you is paid by the other's ships: use it to stop feeding a " +
+        "leader's economy at the price of your own share. Nations count an embargo as -20 relation. The " +
+        "5-minute embargo after you attack someone is automatic and separate.",
+      { target: z.number().int(), stop: z.boolean().optional() },
+      (a) => ({ type: "embargo", target: a.target as number, stop: a.stop as boolean | undefined }),
+    );
+
+    action(
+      "move_warship",
+      "Move a Warship's patrol point to water coordinates (x,y) on the same sea. The ship then hunts " +
+        "within 130 tiles of that point: park it by a rival's Port to capture their trade ships, or off " +
+        "your own coast to sink incoming boats. id: a Warship id from observe.me.units.",
+      { id: z.number().int(), x: z.number().int(), y: z.number().int() },
+      (a) => ({ type: "move_warship", id: a.id as number, x: a.x as number, y: a.y as number }),
+    );
+
+    action(
       "build",
       "Build a structure with gold. City raises your troop cap; Port earns trade gold; " +
         "Defense Post strengthens nearby borders; Factory builds rail and trains that " +

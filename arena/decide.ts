@@ -259,6 +259,16 @@ export const sanitize: Sanitize = (decision, obs) => {
       case "recall_boats":
         if (obs.me.boatsInFlight === 0) reason = "you have no boat at sea";
         break;
+      case "embargo":
+        if (action.target === undefined || !knownIds.has(action.target)) {
+          reason = `target ${action.target} is not a visible player id`;
+        }
+        break;
+      case "move_warship":
+        if (action.id === undefined || !obs.me.units.some((u) => u.id === action.id && u.type === "Warship")) {
+          reason = `id ${action.id} is not one of your Warships; Warship ids: [${obs.me.units.filter((u) => u.type === "Warship").map((u) => u.id).join(",")}]`;
+        }
+        break;
       case "build":
         if (action.unit === undefined || !buildableUnits.has(action.unit)) {
           reason =
@@ -368,6 +378,7 @@ if (
     tiles: 100,
     troops: 100,
     relation: "neutral",
+    relationToMe: "neutral",
     allied: false,
     attackingMe: false,
     coastal: true,

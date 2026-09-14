@@ -347,6 +347,7 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
       tiles: p.numTilesOwned(),
       troops: Math.round(troops),
       relation: p === me ? "neutral" : RELATION_NAMES[me.relation(p)],
+      relationToMe: p === me ? "neutral" : RELATION_NAMES[p.relation(me)],
       allied: me.isAlliedWith(p),
       attackingMe: incoming.has(id),
       coastal: shoreWater(game, p).ocean,
@@ -872,6 +873,36 @@ function translate(game: Game, me: Player, action: Action): Translated {
       if (ids.length === 0)
         return { reason: t === null ? "you have no boat at sea" : `no boat of yours is sailing at ${action.target}; recall_boats() with no target recalls every boat` };
       return { intents: ids.map((unitID) => ({ type: "cancel_boat", unitID })) };
+    }
+
+    case "embargo": {
+      // EmbargoExecution: a permanent embargo (isTemporary false) stops trade
+      // ships both ways until I lift it; the 5-min one after an attack is the
+      // engine's. Nations read it as −20 relation while it stands.
+      const t = resolveTarget(game, action.target);
+      if (!t) return { reason: `target ${action.target} does not exist` };
+      if (t === me) return { reason: "you cannot embargo yourself" };
+      const has = me.hasEmbargoAgainst(t);
+      if (action.stop && !has) return { reason: `you have no embargo on ${action.target}` };
+      if (!action.stop && has) return { reason: `you already embargo ${action.target}` };
+      return { intent: { type: "embargo", targetID: t.id(), action: action.stop ? "stop" : "start" } };
+    }
+
+    case "move_warship": {
+      // MoveWarshipExecution: sets the patrol centre; ignored when the tile is
+      // not on the ship's water body.
+      if (action.id === undefined || action.x === undefined || action.y === undefined)
+        return { reason: "move_warship needs id, x and y" };
+      const ship = me.units(UnitType.Warship).find((u) => u.id() === action.id);
+      if (ship === undefined)
+        return { reason: `no Warship of yours has id ${action.id}; Warship ids are in me.units` };
+      if (!game.isValidCoord(action.x, action.y)) return { reason: `(${action.x},${action.y}) is off the map` };
+      const tile = game.ref(action.x, action.y);
+      if (!game.isWater(tile)) return { reason: `(${action.x},${action.y}) is land; a patrol point must be water` };
+      const comp = game.getWaterComponent(tile);
+      if (comp === null || !game.hasWaterComponent(ship.tile(), comp))
+        return { reason: `(${action.x},${action.y}) is on another water body; the ship cannot reach it` };
+      return { intent: { type: "move_warship", unitIds: [ship.id()], tile } };
     }
 
     case "build": {
