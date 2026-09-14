@@ -76,6 +76,10 @@ export function hasFreeLandBorder(game: Game, p: Player): boolean {
   return false;
 }
 
+export function kindOf(p: Player): ObsNeighbor["kind"] {
+  return p.type() === PlayerType.Human ? "llm" : p.type() === PlayerType.Nation ? "nation" : "tribe";
+}
+
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
@@ -331,7 +335,7 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
     const view: ObsNeighbor = {
       id,
       name: p.name(),
-      kind: p.type() === PlayerType.Human ? "llm" : "tribe",
+      kind: kindOf(p),
       tiles: p.numTilesOwned(),
       troops: Math.round(troops),
       relation: p === me ? "neutral" : RELATION_NAMES[me.relation(p)],
@@ -427,7 +431,7 @@ export function observe(
   const partnerPorts = tradePartnerPorts(game, me);
   const aiOnMySea = game
     .players()
-    .filter((p) => p !== me && p.isAlive() && p.type() === PlayerType.Human)
+    .filter((p) => p !== me && p.isAlive() && p.type() !== PlayerType.Bot)
     .filter((p) => view(p).sharesSea).length;
   // Warships launch from a finished Port only (PlayerImpl.canBuildUnitType).
   const ports = me.units(UnitType.Port).filter((u) => !u.isUnderConstruction()).length;
@@ -441,7 +445,7 @@ export function observe(
     // your land tiles (kept apart from your other structures).
     const [placeable, where] =
       unit === "Port"
-        ? [ownShore, ownShore ? `on one of your coastal tiles (at:"sea"); trade pays both owners once a rival AI has a Port on this sea: ${partnerPorts} partner Port${partnerPorts === 1 ? "" : "s"} now, ${aiOnMySea} AI player${aiOnMySea === 1 ? "" : "s"} on your sea who could build one` : "needs a coastal tile you own; you have none"]
+        ? [ownShore, ownShore ? `on one of your coastal tiles (at:"sea"); trade pays both owners once a rival AI has a Port on this sea: ${partnerPorts} partner Port${partnerPorts === 1 ? "" : "s"} now, ${aiOnMySea} AI player${aiOnMySea === 1 ? "" : "s"}/nation${aiOnMySea === 1 ? "" : "s"} on your sea who could build one` : "needs a coastal tile you own; you have none"]
         : unit === "Warship"
           ? [ports > 0, ports > 0 ? "launched from one of your finished Ports" : "needs a finished Port; you have none"]
           : [ownsLand, "on any of your land tiles, spaced away from your other structures"];
@@ -648,7 +652,7 @@ function resolveTarget(game: Game, id: number | undefined): Player | undefined {
 function blockedReason(game: Game, me: Player, t: Player): string {
   if (me.isAlliedWith(t)) return `${t.smallID()} is your ally; break_alliance first if you want to attack`;
   const left = Math.max(1, Math.round(game.config().spawnImmunityDuration() - game.elapsedGameSeconds() * 10));
-  return `${t.smallID()} is under spawn immunity for ${left} more ticks (AI seats only; tribes are attackable now)`;
+  return `${t.smallID()} is under spawn immunity for ${left} more ticks (AI seats and nations; tribes are attackable now)`;
 }
 
 /** Result of translating one action: either an intent to send, or a drop reason. */

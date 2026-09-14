@@ -60,7 +60,8 @@ export interface ObsNeighbor {
   /** smallID; the only id space the model ever sees */
   id: number;
   name: string;
-  kind: "llm" | "tribe";
+  /** llm = an AI seat; tribe = dumb bot; nation = scripted country (builds, allies, nukes; §7 of the guide) */
+  kind: "llm" | "tribe" | "nation";
   tiles: number;
   troops: number;
   relation: Relation;
@@ -142,7 +143,7 @@ export interface Obs {
     income: { baseGold: number; tradeGold: number; trainGold: number; lootGold: number };
     /** Ports of other players (no embargo either way) on a water body touching one of my Ports, or my shore if I have none: 0 = a Port earns nothing */
     tradePartnerPorts: number;
-    /** living AI players whose shore touches a water body mine does: trade partners as soon as they build a Port */
+    /** living AI seats and nations whose shore touches a water body mine does: trade partners as soon as they build a Port */
     aiOnMySea: number;
     /** tiles gained (or lost) over the last minute */
     tilesDelta1m: number;

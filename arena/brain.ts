@@ -70,6 +70,9 @@ const flags = {
   map: "World",
   size: "Normal",
   bots: 120,
+  /** scripted nations (real countries at their map position); 0 = none */
+  nations: 0,
+  difficulty: "Easy" as keyof typeof Difficulty,
   interval: DEFAULT_INTERVAL_TICKS,
   timer: 40,
   recordsDir: "arena/records",
@@ -97,6 +100,12 @@ const flags = {
         break;
       case "--bots":
         flags.bots = parseInt(next(), 10);
+        break;
+      case "--nations":
+        flags.nations = parseInt(next(), 10);
+        break;
+      case "--difficulty":
+        flags.difficulty = next() as keyof typeof Difficulty;
         break;
       case "--interval":
         flags.interval = parseInt(next(), 10);
@@ -194,10 +203,10 @@ const seats: Seat[] = roster.map((r) => ({
 const config: GameConfig = {
   gameMap,
   gameMapSize,
-  difficulty: Difficulty.Easy,
+  difficulty: Difficulty[flags.difficulty] ?? Difficulty.Easy,
   gameType: GameType.Private,
   gameMode: GameMode.FFA,
-  nations: "disabled",
+  nations: flags.nations > 0 ? flags.nations : "disabled",
   bots: flags.bots,
   // AI seats pick their own start during the spawn phase (spawn tool); tribes
   // are still placed by the engine.
@@ -526,6 +535,7 @@ async function onStart(info: GameStartInfo, missed: Turn[]) {
   );
   game = runner.game;
   console.debug = () => {};
+  console.log(`sim: ${game.nations().length} nations (${game.nations().map((n) => n.playerInfo.name).join(", ") || "none"}), ${info.config.bots} tribes`);
   for (const seat of seats) {
     const p = game.playerByClientID(seat.clientID);
     if (p === null) {

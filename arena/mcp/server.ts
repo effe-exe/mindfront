@@ -17,6 +17,7 @@ import {
   minutesLeft,
   observe,
   toIntents,
+  kindOf,
   UNIT_MAP,
   viewPlayer,
 } from "../observe";
@@ -70,7 +71,7 @@ const RATIO_DESC =
 
 const UNIT_EFFECTS: Record<BuildableUnit, string> = {
   City: "Raises your troop cap by 250k per level once finished (20 ticks). Upgrade with the upgrade tool instead of building a second one when space is tight.",
-  Port: "Trade ships and Warships. Trade ships sail to another AI player's Port on the same sea (tribes keep none) and every arrival pays BOTH owners, ~52k per ship at 300 tiles, ~4 ships per minute per Port: a trade pair earns ~400k/min each, 7x the base income. observe.me.tradePartnerPorts = partner Ports now, observe.me.aiOnMySea = AI players who become partners as soon as they build one. Boats do NOT need a Port: they launch from any shore tile you own.",
+  Port: "Trade ships and Warships. Trade ships sail to another AI player's Port on the same sea (tribes keep none) and every arrival pays BOTH owners, ~52k per ship at 300 tiles, ~4 ships per minute per Port: a trade pair earns ~400k/min each, 7x the base income. observe.me.tradePartnerPorts = partner Ports now, observe.me.aiOnMySea = AI players and nations who become partners as soon as they build one. Boats do NOT need a Port: they launch from any shore tile you own.",
   "Defense Post":
     "Multiplies attacker losses x5 and slows them x3 on your tiles within 30 tiles of it.",
   "Missile Silo":
@@ -166,7 +167,7 @@ function mapOverview(
     if (owner === mySmall) return "me";
     const p = game.playerBySmallID(owner);
     if (p === undefined || !p.isPlayer()) return "?";
-    return (p.type() === PlayerType.Human ? "L" : "T") + owner;
+    return (p.type() === PlayerType.Human ? "L" : p.type() === PlayerType.Nation ? "N" : "T") + owner;
   };
 
   const shown = new Set<number>();
@@ -212,7 +213,7 @@ function mapOverview(
     `Map ${cols}x${rows} cells over ${w}x${h} tiles, sampling 1 tile in ${step}. ` +
       "Columns c0.. run west to east, rows r0.. run north to south. " +
       'Each cell is whoever holds most of it. "~" = sea, "." = unclaimed land, ' +
-      '"L<id>" = a rival AI, "T<id>" = a scripted tribe, "me" = you.',
+      '"L<id>" = a rival AI, "N<id>" = a scripted nation, "T<id>" = a scripted tribe, "me" = you.',
     ...lines,
     "legend: " +
       (legend.length > 0 ? legend.join("; ") : "(nobody on the map yet)"),
@@ -298,7 +299,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
       const picks = game
         .players()
         .filter((p) => p.numTilesOwned() > 0 && p !== me)
-        .map((p) => ({ name: p.name(), kind: p.type() === PlayerType.Human ? "llm" : "tribe", ...cellOf(p) }));
+        .map((p) => ({ name: p.name(), kind: kindOf(p), ...cellOf(p) }));
       return {
         phase: "spawn",
         ticksLeft: game.config().numSpawnPhaseTurns() - game.ticks(),
@@ -484,6 +485,9 @@ export function createArenaServer(opts: ArenaServerOpts): {
             winRule:
               "Hold 80% of the non-fallout land to win outright; otherwise the most land " +
               "when the timer runs out wins (tribes count). No overtime in this arena.",
+            difficulty: cfg.gameConfig().difficulty,
+            nations: game.players().filter((p) => p.type() === PlayerType.Nation).length,
+            tribes: game.players().filter((p) => p.type() === PlayerType.Bot).length,
             spawnImmunityTicks: cfg.spawnImmunityDuration(),
             allianceDurationTicks: cfg.allianceDuration(),
             allianceRequestDurationTicks: cfg.allianceRequestDuration(),
@@ -552,7 +556,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
         "running on you cancels the smaller stack against the larger. A target under 100 tiles is " +
         "eliminated by the first tile you take (their land and gold go to you), and so are you. " +
         "Needs a neighbor id from observe, no alliance with them, and no spawn immunity on them " +
-        `(AI seats only; tribes are attackable from the first tick). ratio: ${RATIO_DESC}`,
+        `(AI seats and nations; tribes are attackable from the first tick). ratio: ${RATIO_DESC}`,
       { target: z.number().int(), ratio: z.number().optional() },
       (a) => ({
         type: "attack",
