@@ -234,6 +234,34 @@ describe("arena/observe", () => {
   });
 });
 
+describe("arena/observe border scans", () => {
+  test("free land on the newest front and a long static front are both counted", async () => {
+    const g = await setup("big_plains", { infiniteGold: true, instantBuild: true }, [
+      playerInfo("player1", PlayerType.Human),
+      playerInfo("player2", PlayerType.Human),
+    ]);
+    const p1 = g.player("player1");
+    const p2 = g.player("player2");
+    // player2: a frame on the north, west and east edges (200x200 map)
+    for (let x = 0; x < 200; x++) for (let y = 0; y < 2; y++) p2.conquer(g.ref(x, y));
+    for (let y = 2; y < 200; y++) {
+      p2.conquer(g.ref(0, y));
+      p2.conquer(g.ref(199, y));
+    }
+    // player1 fills rows 2..119 inside the frame, row by row: the tiles touching
+    // player2 enter the border set first, the free front (row 119) last, and the
+    // border is ~800 tiles, more than the old 600-tile prefix scan.
+    for (let y = 2; y < 120; y++) for (let x = 1; x < 199; x++) p1.conquer(g.ref(x, y));
+    expect(p1.borderTiles().size).toBeGreaterThan(600);
+
+    const obs = observe(g, p1, ctx(p1), []);
+    expect(obs.me.freeLandAtBorder).toBe(198);
+    expect(obs.unclaimedLandAdjacent).toBe(true);
+    const n = obs.neighbors.find((x) => x.id === p2.smallID())!;
+    expect(n.sharedBorderTiles).toBe(198 + 118 + 118 - 2); // corner tiles count once
+  });
+});
+
 describe("arena/observe trade partners", () => {
   test("tradePartnerPorts counts another player's Port on my water", async () => {
     const g = await setup(

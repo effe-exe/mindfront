@@ -296,10 +296,11 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
     }
   }
 
-  // How many of my border tiles touch each other player. Capped scan.
+  // How many of my border tiles touch each other player. The whole border:
+  // its insertion order puts the oldest, static fronts first, so a prefix
+  // misses the moving frontier; four typed-array reads per tile are cheap.
   const borderCounts = new Map<number, number>();
   const nbrs: TileRef[] = [0, 0, 0, 0];
-  let scanned = 0;
   for (const t of me.borderTiles()) {
     const n = game.neighbors4(t, nbrs);
     let a = -1;
@@ -311,7 +312,6 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
       else b = o;
       borderCounts.set(o, (borderCounts.get(o) ?? 0) + 1);
     }
-    if (++scanned >= 2000) break;
   }
 
   const cache = new Map<number, ObsNeighbor>();
@@ -395,15 +395,17 @@ export function observe(
     : [];
 
   // How much room is left to expand: distinct unclaimed land tiles touching my
-  // border (sampled). Small numbers mean "you are boxed in or on an island".
+  // border, exact up to 2,000 (whole border scanned: a prefix reads the oldest,
+  // static fronts, a stride skips a small far frontier). ≈0 = boxed in / island.
   const freeLand = new Set<TileRef>();
-  {
-    let scanned = 0;
-    for (const b of me.borderTiles()) {
-      for (const n of game.neighbors(b)) {
-        if (game.isLand(n) && !game.hasOwner(n)) freeLand.add(n);
+  const nb4: TileRef[] = [0, 0, 0, 0];
+  scan: for (const b of me.borderTiles()) {
+    const n = game.neighbors4(b, nb4);
+    for (let i = 0; i < n; i++) {
+      if (game.isLand(nb4[i]) && !game.hasOwner(nb4[i])) {
+        freeLand.add(nb4[i]);
+        if (freeLand.size >= 2000) break scan;
       }
-      if (++scanned >= 600) break;
     }
   }
   const freeLandAtBorder = freeLand.size;
