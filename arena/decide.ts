@@ -44,7 +44,7 @@ export function systemPrompt(ctx: PlayerCtx): string {
 
 ${GUIDE}
 
-Only "accept_alliance"/"reject_alliance" ids in pendingAllianceRequestsFrom; only "break_alliance" ids in me.allies. Keep a defensive reserve when incomingAttacks is non-empty.
+Only "accept_alliance"/"reject_alliance" ids in pendingAllianceRequestsFrom; only "break_alliance"/"extend_alliance"/"donate" ids in me.allies. Keep a defensive reserve when incomingAttacks is non-empty.
 
 PERSONA
 ${ctx.persona}

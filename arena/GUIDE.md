@@ -136,9 +136,9 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 4. IF `gold` covers the bottleneck: City when the cap throttles; Port only for trade (`tradePartnerPorts` > 0: another AI's Port on the same sea) or Warships, never for boats (boats need only a shore tile); Defense Post `at` = the pressing neighbour; Factory once a City/Port stands within 110 tiles; SAM only when a rival's `structures["Missile Silo"]` > 0. Idle gold earns nothing; Port and Factory share one price ladder, so either doubles the next of both.
 5. IF `freeLandAtBorder` ≈ 0: target by §3: lowest `troops/tiles`, widest `sharedBorderTiles`, non-empty `attackedBy`, no Defense Posts, `tilesDelta1m` < 0; stack ≥ 1.7 × their troops (D/A ≤ 0.6).
 6. IF `reachableByBoat` has a tribe with high `gold` and low `troops/tiles`: `boat` with troops above their army, then `expand` from the beachhead.
-7. IF `incomingAttacks` non-empty: keep ≥1/3 of troops home; counter-cancel (§3) when my stack matches theirs; `retreat` elsewhere first.
+7. IF `incomingAttacks` or `incomingBoats` non-empty: keep ≥1/3 of troops home; counter-cancel (§3) when my stack matches theirs; `retreat` elsewhere first.
 8. IF an `outgoingAttacks` stack falls faster than the target's tiles: `retreat(target)` early (75% back vs a player).
-9. IF fighting elsewhere: `ally` the strong neighbour for a 5-min quiet border; let alliances expire; break only for a decisive gain.
+9. IF fighting elsewhere: `ally` the strong neighbour for a 5-min quiet border; `extend_alliance` an allied tribe in its last 300 ticks for a permanent one (tribes always agree); let AI alliances expire; break only for a decisive gain.
 10. IF a target is under 100 tiles or shrinking under another's attack: take one tile, collect the conquest.
 11. Every minute: main border covered? `troopsPct`? `goldIncomePerMin` above the 60,000 base? Which purchase removes the bottleneck?
 12. IF `game.minutesLeft` < 3: convert everything to tiles; the timer pays the tile leader.

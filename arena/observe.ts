@@ -53,6 +53,8 @@ export const UNIT_MAP: Record<BuildableUnit, UnitType> = {
   Warship: UnitType.Warship,
 };
 
+const UNIT_NAME = new Map(BUILDABLE_UNITS.map((u) => [UNIT_MAP[u], u]));
+
 const RELATION_NAMES: Relation[] = [
   "hostile",
   "distrustful",
@@ -437,7 +439,7 @@ export function observe(
       unit === "Port"
         ? [ownShore, ownShore ? `on one of your coastal tiles; pays only via another player's Port on the same water: ${partnerPorts} such Port${partnerPorts === 1 ? "" : "s"} now` : "needs a coastal tile you own; you have none"]
         : unit === "Warship"
-          ? [ports > 0, ports > 0 ? "launched from one of your Ports" : "needs a Port; you have none"]
+          ? [ports > 0, ports > 0 ? "launched from one of your finished Ports" : "needs a finished Port; you have none"]
           : [ownsLand, "on any of your land tiles, spaced away from your other structures"];
     const note = `${affordable ? "affordable" : `need ${Number(cost) - Number(gold)} more gold`}; ${where}`;
     build[unit] = { cost: Number(cost), affordable, placeable, upgradable: Boolean(game.unitInfo(UNIT_MAP[unit]).upgradable), note };
@@ -461,7 +463,6 @@ export function observe(
   const myMaxTroops = cfg.maxTroops(me);
   const myBox = clusterBox(game, me);
   const myStructures = structuresOf(me);
-  const UNIT_NAME = new Map(BUILDABLE_UNITS.map((u) => [UNIT_MAP[u], u]));
   const myUnits = me
     .units(Object.values(UNIT_MAP))
     .map((u) => ({
@@ -809,7 +810,9 @@ function translate(game: Game, me: Player, action: Action): Translated {
       if (troops > 0) {
         const room = Math.floor(game.config().maxTroops(t) - t.troops());
         if (room <= 0) return { reason: `${action.target} is at their troop cap; troops would be wasted` };
-        return { intent: { type: "donate_troops", recipient: t.id(), troops: Math.min(troops, Math.floor(me.troops()), room) } };
+        const give = Math.min(troops, Math.floor(me.troops()), room);
+        if (give <= 0) return { reason: "you have no troops to give" };
+        return { intent: { type: "donate_troops", recipient: t.id(), troops: give } };
       }
       return { intent: { type: "donate_gold", recipient: t.id(), gold: Math.min(gold, Number(me.gold())) } };
     }
