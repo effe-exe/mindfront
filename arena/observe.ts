@@ -372,7 +372,35 @@ export function observe(
     ? Math.max(0, cfg.spawnImmunityDuration() - game.elapsedGameSeconds() * 10)
     : 0;
 
+  // Alerts: the few facts that should override any plan, in severity order.
+  const alerts: string[] = [];
+  const incoming = me.incomingAttacks();
+  const totalIncoming = incoming.reduce((s, a) => s + a.troops(), 0);
+  if (incoming.length > 0) {
+    const by = incoming
+      .map((a) => `${a.attacker().name()} (id ${a.attacker().smallID()}, ${Math.round(a.troops())} troops)`)
+      .join(", ");
+    const share = me.troops() > 0 ? Math.round((totalIncoming / me.troops()) * 100) : 999;
+    alerts.push(
+      `UNDER ATTACK by ${by}: ${Math.round(totalIncoming)} troops incoming = ${share}% of your army. ` +
+        "Options: attack back on that border, build a Defense Post there, keep troops home, ally someone else, retreat other attacks.",
+    );
+  }
+  for (const a of me.incomingAllianceRequests()) {
+    alerts.push(`ALLIANCE REQUEST from ${a.requestor().name()} (id ${a.requestor().smallID()}): accept_alliance or reject_alliance before it expires.`);
+  }
+  for (const al of me.alliances()) {
+    const left = al.expiresAt() - game.ticks();
+    if (left <= 300) alerts.push(`ALLIANCE with ${al.other(me).name()} (id ${al.other(me).smallID()}) expires in ${Math.max(0, left)} ticks: that border reopens both ways.`);
+  }
+  const unclaimedLandAdjacent = me.sharesBorderWith(game.terraNullius());
+  if (!unclaimedLandAdjacent && freeLandAtBorder === 0)
+    alerts.push("NO FREE LAND at your border: expand gains nothing; grow by attack or boat.");
+  if (myMaxTroops > 0 && me.troops() / myMaxTroops >= 0.85)
+    alerts.push(`TROOPS AT ${Math.round((me.troops() / myMaxTroops) * 100)}% OF CAP: regen is throttled; spend troops or build a City.`);
+
   return {
+    alerts,
     tick,
     minute: round1(game.ticks() / 600),
     game: {
@@ -436,7 +464,7 @@ export function observe(
       bbox: myBox.bbox,
     },
     neighbors,
-    unclaimedLandAdjacent: me.sharesBorderWith(game.terraNullius()),
+    unclaimedLandAdjacent,
     reachableByBoat,
     leaderboard,
     canBuild,

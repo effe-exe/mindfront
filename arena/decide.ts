@@ -362,6 +362,7 @@ if (
   });
 
   const CANNED_OBS: Obs = {
+    alerts: [],
     tick: 500,
     minute: 5,
     game: {

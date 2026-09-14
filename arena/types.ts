@@ -93,6 +93,8 @@ export interface ObsNeighbor {
 }
 
 export interface Obs {
+  /** what needs a decision NOW, most severe first; empty when nothing is urgent */
+  alerts: string[];
   tick: number;
   minute: number;
   /** compact match constants; the full briefing lives in the `game_info` tool */

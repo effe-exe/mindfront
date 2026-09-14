@@ -178,6 +178,9 @@ theater, not a channel.
 
 ## 10. Reading your observation
 
+- `alerts` — always the first key. What needs a decision now, most severe first: incoming attacks (who,
+  how many troops, what share of your army), alliance requests waiting, alliances about to expire, no free
+  land left, troops near the cap. Read it before anything else; an empty list means nothing is urgent.
 - `me.troops` / `maxTroops` / `troopsPct` — army, cap, how throttled your regen is.
 - `me.goldIncomePerMin`, `me.tilesDelta1m` — measured over the last minute: what your structures and attacks
   are actually delivering. Every rival carries `tilesDelta1m` too.

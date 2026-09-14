@@ -155,6 +155,8 @@ interface Seat extends PlayerCtx {
   abort: AbortController;
   /** pre-match briefing done (plan written) */
   briefed: boolean;
+  /** attack ids already announced to this seat */
+  seenAttacks: Set<string>;
 }
 
 const seats: Seat[] = roster.map((r) => ({
@@ -180,6 +182,7 @@ const seats: Seat[] = roster.map((r) => ({
   lastActionTick: 0,
   abort: new AbortController(),
   briefed: false,
+  seenAttacks: new Set(),
 }));
 
 // ---------- lobby ----------
@@ -599,6 +602,18 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     if (!from.isPlayer() || seat === undefined) continue;
     const about = c.target === undefined ? "" : ` (about ${g.player(c.target).name()})`;
     note(seat, `${from.name()} says "${c.category}.${c.key}"${about}`);
+  }
+
+  // A new attack on a seat is an event, not just a field: it must reach the
+  // model even if the attack is over before its next observation.
+  for (const seat of seats) {
+    if (seat.me === null || seat.life !== "alive") continue;
+    for (const a of seat.me.incomingAttacks()) {
+      if (seat.seenAttacks.has(a.id())) continue;
+      seat.seenAttacks.add(a.id());
+      const from = a.attacker();
+      note(seat, `t${g.ticks()} ${from.name()} (id ${from.smallID()}) started attacking you with ${Math.round(a.troops())} troops`);
+    }
   }
 
   for (const seat of seats) {
