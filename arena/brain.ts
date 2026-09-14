@@ -153,6 +153,8 @@ interface Seat extends PlayerCtx {
   lastActionTick: number;
   /** stops this seat's internal player loop (death, shutdown) */
   abort: AbortController;
+  /** pre-match briefing done (plan written) */
+  briefed: boolean;
 }
 
 const seats: Seat[] = roster.map((r) => ({
@@ -177,6 +179,7 @@ const seats: Seat[] = roster.map((r) => ({
   errors: 0,
   lastActionTick: 0,
   abort: new AbortController(),
+  briefed: false,
 }));
 
 // ---------- lobby ----------
@@ -354,9 +357,29 @@ function startPlayers() {
           seat.latencyEma === 0 ? info.latencyMs : seat.latencyEma * 0.7 + info.latencyMs * 0.3;
         if (info.fallback) seat.errors++;
       },
+      onBriefed: (plan) => {
+        seat.briefed = true;
+        writeEvent({ kind: "sim", t: 0, type: "briefing", text: `${seat.name} plan: ${plan}`, players: [seat.name] });
+        console.log(`[${seat.name}] briefed (${plan.length} chars)`);
+        maybeStart();
+      },
     });
   }
 }
+
+// The lobby waits for every internal seat to finish its briefing (or 3 min),
+// so nobody meets the spawn phase without having processed the manual.
+let startSent = false;
+function maybeStart() {
+  if (startSent || !seats.every((s) => s.sawLobbyInfo)) return;
+  const pending = seats.filter((s) => s.model !== "external" && !flags.noLlm && !s.briefed);
+  if (pending.length > 0 && Date.now() - lobbyReadyAt < 180_000) return;
+  startSent = true;
+  if (pending.length > 0) console.log(`starting without briefing from: ${pending.map((s) => s.name).join(", ")}`);
+  console.log("all seats briefed, starting timer");
+  send(seats[0], { type: "intent", intent: { type: "toggle_game_start_timer" } });
+}
+let lobbyReadyAt = 0;
 
 // ---------- game state ----------
 
@@ -455,11 +478,11 @@ function onMessage(seat: Seat, msg: ServerMessage) {
         seat.sawLobbyInfo = true;
         console.log(`[${seat.name}] joined as ${msg.myClientID}`);
         if (seats.every((s) => s.sawLobbyInfo)) {
-          console.log("all seats in lobby, starting timer");
-          send(seats[0], {
-            type: "intent",
-            intent: { type: "toggle_game_start_timer" },
-          });
+          console.log("all seats in lobby, briefing players");
+          lobbyReadyAt = Date.now();
+          if (!playersStarted) startPlayers();
+          maybeStart();
+          setTimeout(maybeStart, 181_000);
         }
       }
       return;

@@ -12,6 +12,13 @@ ends anything that outlives its timer. Overtime — the 80% bar sinking 2 points
 is off by default (`overtimeConfig`). You are eliminated when an attacker's flood covers your whole
 territory; they take your land and your gold.
 
+## 1b. Before the match
+
+You receive this manual before the lobby opens and are asked to write your own plan from it; that plan
+comes back to you in every observation as `plan`. The spawn phase does not begin until every player has
+finished that briefing, so read the whole manual once, properly: everything a tool can do is described
+here, and nothing in the observation will be explained twice.
+
 ## 2. Time
 
 One tick is 100 ms (`msPerTick`): 10 ticks per second, **600 per minute**. Matches open with a spawn phase

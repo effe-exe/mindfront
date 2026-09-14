@@ -30,6 +30,8 @@ export interface RunPlayerOpts {
   maxToolCallsPerRound?: number;
   signal?: AbortSignal;
   onRound?: (info: { latencyMs: number; calls: number; fallback: boolean }) => void;
+  /** called once the pre-match briefing (manual read + written plan) is done */
+  onBriefed?: (plan: string) => void;
 }
 
 type OpenAiTool = {
@@ -73,6 +75,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
     maxToolCallsPerRound = 8,
     signal,
     onRound,
+    onBriefed,
   } = opts;
   const fetchImpl = opts.fetchImpl ?? fetch;
 
@@ -90,6 +93,49 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   let notes = "";
   let lastResult = "";
 
+  // Pre-match briefing: the manual is the system prompt; make the model process
+  // it by writing its own plan before the spawn phase. The plan rides along in
+  // every later observation as `plan`.
+  let plan = "";
+  try {
+    const res = await fetchImpl(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey ?? process.env.OPENROUTER_API_KEY}`,
+        "HTTP-Referer": "https://github.com/effe-exe/mindfront",
+        "X-Title": "MindFront",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 900,
+        ...(NO_REASONING.has(model) ? {} : { reasoning: { effort: "low" } }),
+        messages: [
+          { role: "system", content: baseSystemPrompt },
+          {
+            role: "user",
+            content:
+              "PRE-MATCH BRIEFING. The match has not started. Read the manual above carefully, then write " +
+              "your private game plan in at most 250 words: (1) how you will choose your spawn cell and what " +
+              "you reject; (2) your first three purchases and the trigger for each; (3) when you will use " +
+              "boats and against whom; (4) your alliance and betrayal policy; (5) your stop-loss rule; " +
+              "(6) three mechanics from the manual you consider decisive. Plain text, no tools.",
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      plan = String(data?.choices?.[0]?.message?.content ?? "").trim().slice(0, 2000);
+    } else {
+      console.warn(`player[${model}]: briefing HTTP ${res.status}`);
+    }
+  } catch (err) {
+    console.warn(`player[${model}]: briefing failed: ${String(err).slice(0, 120)}`);
+  }
+  onBriefed?.(plan);
+
   while (!signal?.aborted) {
     const roundStart = Date.now();
     let fallback = false;
@@ -106,6 +152,12 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
       } catch {
         obsObj = { raw: obsRaw };
       }
+      if (obsObj?.ok === false && /not started/.test(String(obsObj.reason))) {
+        // Lobby: nothing to decide yet, do not spend a model call.
+        await sleep(2000, signal);
+        continue;
+      }
+      obsObj.plan = plan;
       obsObj.notes = notes;
       obsObj.lastResult = lastResult;
 
@@ -268,6 +320,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const fetchImpl = (async () => {
       fetchCall++;
       if (fetchCall === 1) {
+        // pre-match briefing: a plain-text plan
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content: "Plan: expand, then boats." } }] }),
+          text: async () => "",
+        };
+      }
+      if (fetchCall === 2) {
         // round 1, first ask: three tool calls
         return {
           ok: true,
@@ -288,7 +349,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           text: async () => "",
         };
       }
-      if (fetchCall === 2) {
+      if (fetchCall === 3) {
         // round 1, follow-up: done
         return {
           ok: true,
@@ -303,6 +364,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
     const controller = new AbortController();
     let rounds = 0;
+    let briefedPlan = "";
     const seenFallback: boolean[] = [];
     await runPlayerWithClient(client, {
       url: "unused",
@@ -314,6 +376,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       apiKey: "x",
       fetchImpl,
       signal: controller.signal,
+      onBriefed: (plan) => briefedPlan = plan,
       onRound: (info) => {
         rounds++;
         seenFallback.push(info.fallback);
@@ -321,6 +384,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       },
     });
 
+    assert.equal(briefedPlan, "Plan: expand, then boats.", "briefing plan should be captured");
     assert.equal(rounds, 2, "loop should run exactly 2 rounds before abort");
     assert.deepEqual(seenFallback, [false, true], "round 1 ok, round 2 falls back on HTTP 429");
     assert.ok(
