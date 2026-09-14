@@ -605,7 +605,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
     action(
       "break_alliance",
       "Break an alliance. Brands you a traitor for 30 seconds: attackers take half " +
-        "losses against you, tribes hunt you, nations refuse your offers and may break with you. Only ids in observe.me.allies.",
+        "losses against you, tribes hunt you, nations refuse your offers, and every allied nation listed in observe.me.betrayalCascade breaks with you within seconds and attacks. Only ids in observe.me.allies.",
       { target: z.number().int() },
       (a) => ({ type: "break_alliance", target: a.target as number }),
     );

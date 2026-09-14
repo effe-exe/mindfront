@@ -593,6 +593,15 @@ export function observe(
       silos: myStructures["Missile Silo"],
       boatsInFlight: me.unitCount(UnitType.TransportShip),
       allies: me.allies().map((a) => a.smallID()),
+      // NationAllianceBehavior.maybeBetray: on Medium and up a nation breaks
+      // with a traitor ally whose troops are under 1.2× its own.
+      betrayalCascade:
+        cfg.gameConfig().difficulty === "Easy"
+          ? []
+          : me
+              .allies()
+              .filter((a) => a.type() === PlayerType.Nation && me.troops() < a.troops() * 1.2)
+              .map((a) => a.smallID()),
       pendingAllianceRequestsFrom: me
         .incomingAllianceRequests()
         .map((r) => r.requestor().smallID()),

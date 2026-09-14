@@ -128,6 +128,8 @@ export interface Obs {
     silos: number;
     boatsInFlight: number;
     allies: number[];
+    /** allied nations that break with me within their next act tick if I become a traitor now (Medium+: traitor ally with troops < 1.2× theirs) */
+    betrayalCascade: number[];
     pendingAllianceRequestsFrom: number[];
     incomingAttacks: { from: number; troops: number }[];
     /** enemy transports sailing at my land: sender, troops aboard, tiles still to sail (1 tile/tick) */

@@ -424,6 +424,7 @@ if (
       silos: 0,
       boatsInFlight: 0,
       allies: [7],
+      betrayalCascade: [],
       pendingAllianceRequestsFrom: [3],
       incomingAttacks: [],
       incomingBoats: [],
