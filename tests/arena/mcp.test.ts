@@ -264,6 +264,16 @@ describe("arena/mcp", () => {
     expect(await call("build", { unit: "City" })).toEqual({ ok: true });
   });
 
+  test("ally drop reasons name the pending offer and the cooldown", async () => {
+    expect(await call("ally", { target: player2.smallID() })).toEqual({ ok: true });
+    // the intent only reached `sent`; create the request in the sim by hand
+    const req = player1.createAllianceRequest(player2)!;
+    expect((await call("ally", { target: player2.smallID() })).reason).toMatch(/pending for \d+ more ticks/);
+    req.reject();
+    expect((await call("ally", { target: player2.smallID() })).reason).toMatch(/ask again in \d+ ticks/);
+    expect(sent).toHaveLength(1);
+  });
+
   test("say emits a tool event line", async () => {
     expect(await call("say", { text: "hello world" })).toEqual({ ok: true });
     const line = events[events.length - 1] as ToolLine;

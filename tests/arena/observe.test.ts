@@ -74,7 +74,7 @@ describe("arena/observe", () => {
     expect(me.maxTroops).toBeGreaterThan(0);
     expect(me.troopsPct).toBeGreaterThanOrEqual(0);
     expect(me.troopsPct).toBeLessThanOrEqual(100);
-    expect(me.isTraitor).toBe(false);
+    expect(me.traitorTicksLeft).toBe(0);
     expect(me.betrayals).toBe(0);
     expect(me.allianceExpiry).toEqual([]);
     expect(me.pendingRequestExpiry).toEqual([]);

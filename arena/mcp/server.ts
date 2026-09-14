@@ -408,7 +408,7 @@ export function createArenaServer(opts: ArenaServerOpts): {
         description:
           "Full dossier on one player you can currently see (a neighbor, ally, " +
           "attacker, leaderboard or boat-reachable id from observe): tiles, troops and " +
-          "troop cap, gold, structures, relation, alliances and targets, who they are " +
+          "troop cap, gold, structures, relation, alliances, who they are " +
           "attacking and who is attacking them, traitor record, growth over the last " +
           "minute, shared border with you, and their direction/distance from you.",
         inputSchema: { id: z.number().int().describe("smallID from observe") },
@@ -479,8 +479,8 @@ export function createArenaServer(opts: ArenaServerOpts): {
             ticksPerSecond: 10,
             minutesLeft: minutesLeft(game),
             winRule:
-              "Hold 80% of the land to win outright; otherwise the most land when the " +
-              "timer runs out wins. With overtime enabled the 80% bar drops over time.",
+              "Hold 80% of the non-fallout land to win outright; otherwise the most land " +
+              "when the timer runs out wins (tribes count). No overtime in this arena.",
             spawnImmunityTicks: cfg.spawnImmunityDuration(),
             allianceDurationTicks: cfg.allianceDuration(),
             allianceRequestDurationTicks: cfg.allianceRequestDuration(),
@@ -489,8 +489,10 @@ export function createArenaServer(opts: ArenaServerOpts): {
             units,
             attackMath: ATTACK_MATH,
             rateLimits:
-              "10 tool calls per second, 150 per minute. Over that you get errors, " +
-              "not actions.",
+              "Intents (every action tool that sends something) are limited to 10 per second " +
+              "and 150 per minute per seat; beyond that the server DROPS them silently (the tool " +
+              "still says ok). retreat() and recall_boats() without a target send one intent per " +
+              "attack/boat. observe, inspect_player, game_info, map_overview, rules and say are free.",
             cadence:
               "No cap on actions per turn and no fixed cadence: act as soon as you " +
               "have something worth doing. An attack keeps fighting on its own after " +
@@ -531,19 +533,23 @@ export function createArenaServer(opts: ArenaServerOpts): {
 
     action(
       "expand",
-      "Claim adjacent unclaimed land. Cheap growth: do this early and often while " +
-        "observe reports unclaimedLandAdjacent. More land means faster troop regen. " +
-        `ratio: ${RATIO_DESC}`,
+      "Claim adjacent unclaimed land: 16/20/24 troops per plains/highland/mountain tile, no " +
+        "malus, survivors return when the front runs out. Do it early and often while observe " +
+        "reports unclaimedLandAdjacent (refused otherwise). A stack above ~6,600 troops only " +
+        `lasts longer, it does not go faster. ratio: ${RATIO_DESC}`,
       { ratio: z.number().optional() },
       (a) => ({ type: "expand", ratio: a.ratio as number | undefined }),
     );
 
     action(
       "attack",
-      "Send troops at a bordering player. The attack keeps fighting on its own after " +
-        "you send it, so do not repeat it every turn. Attacking well-defended land can " +
-        "cost more troops than it gains, and you cannot attack an ally without breaking " +
-        `the alliance first. target: a neighbor id from observe. ratio: ${RATIO_DESC}`,
+      "Send troops at a bordering player. The troops leave your pool at once and the attack " +
+        "fights on its own until it runs out or you retreat, so do not repeat it every turn: a " +
+        "second send at the same target merges into the first. Attacking someone whose attack is " +
+        "running on you cancels the smaller stack against the larger. A target under 100 tiles is " +
+        "eliminated by the first tile you take (their land and gold go to you), and so are you. " +
+        "Needs a neighbor id from observe, no alliance with them, and no spawn immunity on them " +
+        `(AI seats only; tribes are attackable from the first tick). ratio: ${RATIO_DESC}`,
       { target: z.number().int(), ratio: z.number().optional() },
       (a) => ({
         type: "attack",
@@ -570,8 +576,10 @@ export function createArenaServer(opts: ArenaServerOpts): {
 
     action(
       "ally",
-      "Offer an alliance to a neighbor. Alliances last 5 minutes and block attacks in " +
-        "both directions; treat them as temporary tools, not friendships.",
+      "Offer an alliance to any visible id (not only neighbors). The offer lapses after 200 " +
+        "ticks; if they already offered you one, this accepts it; asking the same player again " +
+        "waits 300 ticks after a refusal. An alliance lasts 5 minutes (extend_alliance renews), " +
+        "blocks attacks both ways and lifts embargoes; treat it as a temporary tool, not a friendship.",
       { target: z.number().int() },
       (a) => ({ type: "ally", target: a.target as number }),
     );
@@ -703,9 +711,11 @@ export function createArenaServer(opts: ArenaServerOpts): {
     action(
       "retreat",
       "Stop-loss: cancel your running attacks. With a target id, only the attack on that " +
-        "player; without one, every attack you have running. Survivors walk home; the engine " +
-        "keeps 25% of them as the price of retreating from a player (none when retreating from " +
-        "unclaimed land). Use it when an attack is only feeding a stronger defense.",
+        "player; without one, every attack you have running (expansions too). The attack stops " +
+        "at once and the survivors are back in your pool 20 ticks later; the engine keeps 25% of " +
+        "them as the price of retreating from a player (none when retreating from unclaimed " +
+        "land). Use it when an attack is only feeding a stronger defense. Needs a running attack " +
+        "of yours (observe.me.outgoingAttacks); boats at sea are recalled with recall_boats.",
       { target: z.number().int().optional() },
       (a) => ({ type: "retreat", target: a.target as number | undefined }),
     );
@@ -727,7 +737,8 @@ export function createArenaServer(opts: ArenaServerOpts): {
     action(
       "emoji",
       "Send an emoji to one player, or to everyone when target is omitted. No game " +
-        "effect beyond the other players seeing it. Must be one of the game's emoji (see rules).",
+        "effect: it lands in the recipient's recentEvents. Must be one of the game's emoji (see " +
+        "rules); one per recipient every 50 ticks.",
       { emoji: z.string(), target: z.number().int().optional() },
       (a) => ({
         type: "emoji",
@@ -738,8 +749,9 @@ export function createArenaServer(opts: ArenaServerOpts): {
 
     action(
       "chat",
-      "Send a quick-chat message to one player. key must be a valid quick chat key " +
-        '(see rules), e.g. "help.request_alliance".',
+      "Send a quick-chat message to one player; it lands in their recentEvents, no game " +
+        'effect. key must be a valid quick chat key (see rules), e.g. "help.request_alliance"; ' +
+        "one per recipient every 30 ticks.",
       { key: z.string(), target: z.number().int() },
       (a) => ({
         type: "chat",

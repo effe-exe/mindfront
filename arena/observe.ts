@@ -263,6 +263,12 @@ function structuresOf(p: Player, underConstruction = false): Record<BuildableUni
   return out;
 }
 
+/** PlayerImpl.getTraitorRemainingTicks is public but not on the Player interface. */
+function traitorTicksLeft(p: Player): number {
+  const impl = p as unknown as { getTraitorRemainingTicks?: () => number };
+  return Math.max(0, impl.getTraitorRemainingTicks?.() ?? (p.isTraitor() ? 1 : 0));
+}
+
 function push(map: Map<number, number[]>, key: number, value: number): void {
   const arr = map.get(key);
   if (arr === undefined) map.set(key, [value]);
@@ -334,10 +340,9 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
       gold: Number(p.gold()),
       maxTroops: Math.round(maxTroops),
       troopsPct: maxTroops > 0 ? Math.round((troops / maxTroops) * 100) : 0,
-      isTraitor: p.isTraitor(),
+      traitorTicksLeft: traitorTicksLeft(p),
       betrayals: p.betrayals(),
       allies: p.allies().map((a) => a.smallID()),
-      targets: p.targets().map((t) => t.smallID()),
       attacking: attacking.get(id) ?? [],
       attackedBy: attackedBy.get(id) ?? [],
       tilesDelta1m: deltas(p, tick).tiles,
@@ -587,7 +592,7 @@ export function observe(
       tilesDelta1m: myDeltas.tiles,
       immuneUntilTick:
         immunityTicksLeft > 0 ? Math.round(tick + immunityTicksLeft) : 0,
-      isTraitor: me.isTraitor(),
+      traitorTicksLeft: traitorTicksLeft(me),
       betrayals: me.betrayals(),
       allianceExpiry: me.alliances().map((a) => ({
         id: a.other(me).smallID(),
@@ -740,9 +745,16 @@ function translate(game: Game, me: Player, action: Action): Translated {
           };
       }
       if (!me.canSendAllianceRequest(t)) {
-        return {
-          reason: `cannot send an alliance request to ${action.target} right now`,
-        };
+        // PlayerImpl.canSendAllianceRequest, in its order of checks.
+        if (!t.isAlive()) return { reason: `${action.target} is dead` };
+        if (me.isAlliedWith(t)) return { reason: `you are already allied with ${action.target}` };
+        const pending = me.outgoingAllianceRequests().find((r) => r.recipient() === t);
+        if (pending !== undefined)
+          return { reason: `your offer to ${action.target} is still pending for ${pending.createdAt() + game.config().allianceRequestDuration() - game.ticks()} more ticks; they must accept it` };
+        const past = (me as unknown as { pastOutgoingAllianceRequests?: { recipient(): Player; createdAt(): number }[] }).pastOutgoingAllianceRequests ?? [];
+        const last = past.filter((r) => r.recipient() === t).reduce((m, r) => Math.max(m, r.createdAt()), -Infinity);
+        const wait = last + game.config().allianceRequestCooldown() - game.ticks();
+        return { reason: wait > 0 ? `${action.target} declined or ignored your last offer; you can ask again in ${wait} ticks` : `cannot send an alliance request to ${action.target} right now (disconnected?)` };
       }
       return { intent: { type: "allianceRequest", recipient: t.id() } };
     }
@@ -1026,12 +1038,11 @@ function translate(game: Game, me: Player, action: Action): Translated {
       );
       if (idx === -1)
         return { reason: `"${action.emoji}" is not a supported emoji` };
-      if (action.target === undefined) {
-        return { intent: { type: "emoji", recipient: AllPlayers, emoji: idx } };
-      }
-      const t = resolveTarget(game, action.target);
-      if (!t) return { reason: `target ${action.target} does not exist` };
-      return { intent: { type: "emoji", recipient: t.id(), emoji: idx } };
+      const t = action.target === undefined ? AllPlayers : resolveTarget(game, action.target);
+      if (t === undefined) return { reason: `target ${action.target} does not exist` };
+      if (!me.canSendEmoji(t))
+        return { reason: `emoji cooldown: one per recipient every ${game.config().emojiMessageCooldown()} ticks (the engine drops extras silently)` };
+      return { intent: { type: "emoji", recipient: t === AllPlayers ? AllPlayers : t.id(), emoji: idx } };
     }
 
     case "chat": {
@@ -1042,6 +1053,8 @@ function translate(game: Game, me: Player, action: Action): Translated {
       if (action.target === undefined) return { reason: "chat needs a target" };
       const t = resolveTarget(game, action.target);
       if (!t) return { reason: `target ${action.target} does not exist` };
+      if (!me.canSendQuickChat(t))
+        return { reason: `chat cooldown: one per recipient every ${game.config().quickChatCooldown()} ticks (the engine drops extras silently)` };
       return {
         intent: {
           type: "quick_chat",

@@ -74,12 +74,11 @@ export interface ObsNeighbor {
   maxTroops: number;
   /** troops as a percentage of their cap */
   troopsPct: number;
-  isTraitor: boolean;
+  /** ticks their traitor mark still lasts (0 = not a traitor): attackers pay half losses against them meanwhile */
+  traitorTicksLeft: number;
   betrayals: number;
   /** smallIDs they are allied with */
   allies: number[];
-  /** smallIDs they have publicly marked as targets */
-  targets: number[];
   /** smallIDs they currently have an attack running against */
   attacking: number[];
   /** smallIDs currently attacking them */
@@ -147,7 +146,8 @@ export interface Obs {
     tilesDelta1m: number;
     /** tick my spawn immunity ends; 0 when it is already over */
     immuneUntilTick: number;
-    isTraitor: boolean;
+    /** ticks my traitor mark still lasts (0 = none) */
+    traitorTicksLeft: number;
     betrayals: number;
     /** per alliance: ticks until it lapses and who has already asked to renew (both must call `extend_alliance`) */
     allianceExpiry: {

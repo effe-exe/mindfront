@@ -6,7 +6,7 @@
 
 1. Win: >80% of non-fallout land at any 10-tick check (`percentageTilesOwnedToWin`), else most tiles when `game.minutesLeft` ends (the engine clock skips the 20 s spawn phase: ~20 s after it reads 0; 170-min hard cap). Tribes count.
 2. Death: 0 tiles, or any attack leaving a player under 100 tiles (§8); everything lost.
-3. No action cap or cadence; internal seats ≤8 tool calls per round, rounds ≥1 s apart. Attacks and boats run on after one send; never re-send a running one.
+3. No action cap or cadence; internal seats ≤8 tool calls per round, rounds ≥1 s apart. Intents (every sending tool; read-only tools and `say` are free) ≤10/s and ≤150/min per seat, silently dropped beyond (`ClientMsgRateLimiter`); `retreat()`/`recall_boats()` without a target send one per attack/boat. Attacks and boats run on after one send; never re-send a running one.
 4. Every `target` = a numeric `id` from the current `observe`. Actions return `{ok:true}` or `{ok:false, reason}`; drops cost nothing. Gold is charged a tick after the send, so purchases in the same round are checked against one purse (the second is refused, not silently lost).
 5. Spawn phase 200 ticks: `observe` = `{phase:"spawn", ticksLeft, myPick, picks, map}`; `spawn(col,row)`, re-pick freely; other tools refuse; no pick → placed far from everyone.
 6. Briefing: manual first, then a written plan that returns in every observation as `plan`; the spawn phase waits for every seat's plan.
@@ -27,7 +27,7 @@
 ## 3. Land attacks
 
 - `expand(ratio)` = attack on unclaimed land; `attack(target, ratio)` on a bordering player. Sent = `floor(troops × ratio)`, ratio 0.05–0.6, default 0.3.
-- Runs until troops < 1 or the front is empty (survivors return, no malus). A second send at the same target merges (boat landings never merge).
+- Runs until troops < 1 or the front is empty (survivors return, no malus). A second send at the same target merges (boat landings never merge). `retreat(target?)`: the attack freezes at once, survivors are refunded 20 ticks later (`RetreatExecution`), −25% vs a player, 0 vs unclaimed.
 - Counter-cancel: attacking a player whose attack runs on me deletes the smaller stack and reduces the larger by it.
 - Per tile taken: defender loses `D / defTiles`; attacker loses `M × clamp(D/A, 0.6, 2) × (0.463 × G + 0.0039 × D/defTiles)` (`attackLogic`); tile time (budget 1/tick) `C × clamp(D/A, 0.82, 7.5) × clamp(D/A ÷ 20, 1, 50) / 7.77 / front`. D = defender troops, A = attack troops now, front = attack border tiles + 0–5.
 - M = 80 / 100 / 120, C = 16.5 / 20 / 25 for plains / highland / mountain. Multipliers (loss, time): defender Defense Post within 30 tiles ×5, ×3; fallout ×(5 − 2 × falloutShare) both; traitor defender ×0.5, ×0.8; tribe defender ×0.7, ×1. G = `1 − depth / (1 + (300,000/tiles)^2.5)`, depth 0.7 on attacker tiles (0.73 for time), 0.3 on defender tiles; ≈1 under 50k tiles.
@@ -73,7 +73,7 @@ A blast covering ≥100 weighted tiles (inner 1, outer 0.5) of an ally's land or
 
 - `relation`: my ledger of their acts toward me, −100..100: attack −60, alliance break −100 (−40 with everyone else bordering the breaker), nuke −100, alliance +100; decays 0.05/tick to 0; labels hostile < −50, distrustful < 0, neutral < 50, else friendly. No mechanical effect; tribes ignore it.
 - `ally(target)`: offer to any visible id, expires after 200 ticks (`allianceRequestDuration`); 300-tick cooldown before re-asking (`allianceRequestCooldown`); `accept_alliance` sends the offer back. Lasts 3,000 ticks = 5 min (`allianceDuration`), expires silently. `extend_alliance(target)`: once BOTH sides have called it, expiry resets to now + 3,000 (`AllianceExtensionExecution`; no time window, the remaining time is not added, so renew in the last 300 ticks); a tribe answers within its next act tick (40–80 ticks); `me.allianceExpiry[].theyAgreedToExtend` = they already asked, `iAgreedToExtend` = you did. Allied: attacks blocked both ways (one in flight retreats, no malus), temporary embargoes lifted, trains pay the ally rate; no shared vision or income.
-- `break_alliance`: traitor 300 ticks (`traitorDuration`), `betrayals` +1 forever; no mark if the other side is already a traitor. Traitor: §3 multipliers against me; each bordering tribe attacks me at 1-in-3 odds per attack tick (1-in-6 if allied, breaking it).
+- `break_alliance`: traitor 300 ticks (`traitorDuration`, countdown in `traitorTicksLeft`), `betrayals` +1 forever; no mark if the other side is already a traitor (breaking with a traitor is free). Traitor: §3 multipliers against me; each bordering tribe attacks me at 1-in-3 odds per attack tick (1-in-6 if allied, breaking it).
 - Tribes (`kind: "tribe"`, 120 bots): act every 40–80 ticks; accept every alliance and extension request; never build (they delete structures they capture); expand while free land borders them; retaliate FIRST against their largest non-allied attacker regardless of troops; hunt a bordering traitor with 1/3 odds and break their own alliance with an allied traitor with 1/6 odds; otherwise attack only at ≥50–60% of cap, sending everything above a 30–40% reserve, skipping AI neighbours half the time; can boat. Weak on paper: cap ÷3, regen ×0.5, attacker losses ×0.7 against them. Conquered → all their gold (50/tick ≈ 30k per minute alive).
 - `donate(target, troops|gold)`: allies only; one donation per ally per 100 ticks, gold and troops share the cooldown (`donateCooldown`); troops capped at the room under their cap and at my stock; their relation to me +50 for ≥ ~1/12 of their cap in troops, +5 per 2,500 gold (chunk grows ~×2 per 5 min), max +100 (`DonateTroopsExecution`, `DonateGoldExecution`). Embargoes, target calls: no tool.
 
@@ -92,7 +92,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `expand` | `ratio?` | `unclaimedLandAdjacent` | attack on unclaimed land | no unclaimed land borders you; no troops |
 | `attack` | `target`, `ratio?` | id in `neighbors`, not allied, not immune | land attack | not your neighbor; allied; immune (ticks left given); dead; no troops |
 | `boat` | `target`, `ratio?` | visible id with `sharesSea`, `boatsInFlight` < 3, not immune | §4 | no shared water; 3 at sea (ETA given); no sea route; immune; dead |
-| `ally` | `target` | visible id, not allied, no pending offer, cooldown passed | offer, or accept theirs | not visible; already allied; cannot send now |
+| `ally` | `target` | visible id, not allied, no pending offer, cooldown passed | offer, or accept theirs | not visible; already allied; offer pending (ticks left); cooldown (ticks left); dead |
 | `accept_alliance`, `reject_alliance` | `target` | id in `pendingAllianceRequestsFrom` | alliance / rejection | no pending request |
 | `break_alliance` | `target` | id in `me.allies` | §7 | not your ally |
 | `extend_alliance` | `target` | id in `me.allies`, not yet asked by me | renew flag; both flags → +5 min from now (§7) | not your ally; already asked |
@@ -100,9 +100,9 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `recall_boats` | `target?` | `boatsInFlight` > 0 | boats turn home, 75% land (§4) | no boat at sea; none sailing at target |
 | `build` | `unit`, `at?` | unit in `canBuild`; `at` visible id or `"sea"` | new structure (§5) | `build[unit].note`; no spot 15 from others; no border with `at`; no coast |
 | `upgrade` | `unit`, `id?` | `build[unit].affordable`; a finished one of that type in `me.units` | +1 level, instant (§5) | not upgradable (Defense Post, Warship); none owned; still building; unknown id; gold |
-| `retreat` | `target?` | a running attack (none = all, expands too) | survivors home, −25% vs a player, 0% vs unclaimed | no attack running |
+| `retreat` | `target?` | a running attack (none = all, expands too) | attack frozen at once, survivors home after 20 ticks, −25% vs a player, 0% vs unclaimed | no attack running (an attacker id is named as such) |
 | `nuke` | `target`, `nuke` | `nukes.silos` > 0, `nuke` in `nukes.affordable`, not allied; blast clear of my tiles and of any ally's land/structures (`wouldNukeBreakAlliance`) | §6 | no silo; unaffordable; allied; own tiles in blast; would break an alliance; no ready silo or immunity; target owns no land |
-| `emoji`, `chat` | `emoji`/`key`, `target?` (chat: needed) | valid value; target visible (emoji omitted = all) | line in the recipient's `recentEvents` | unknown value; unknown target |
+| `emoji`, `chat` | `emoji`/`key`, `target?` (chat: needed) | valid value; target visible (emoji omitted = all); 50 / 30 ticks since my last to that recipient | line in the recipient's `recentEvents` | unknown value; unknown target; cooldown |
 
 ## 10. Observation
 
@@ -118,10 +118,10 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `me.units[{id,type,level,underConstruction,x,y}]` | every structure I own, ≤40 nearest my centre | `upgrade` id; which City/Port is exposed |
 | `me.allies`, `me.allianceExpiry[{id,ticksLeft,theyAgreedToExtend,iAgreedToExtend}]`, `me.pendingAllianceRequestsFrom`, `me.pendingRequestExpiry[{id,ticksLeft}]` | allies; ticks until each expires and who has asked to renew; offers awaiting me and ticks until they lapse | which border is frozen, how long; `extend_alliance` when `ticksLeft` ≤ 300 or they asked; accept / reject |
 | `me.incomingAttacks[{from,troops}]`, `me.incomingBoats[{from,troops,tilesAway}]`, `me.outgoingAttacks[{to,troops,troopsRemaining}]` | attacks on me, current stacks; enemy transports sailing at my land (1 tile/tick); my running attacks (`to` = id or `"land"`; both troop fields = current stack) | reserve, counter-cancel (§3), Defense Post `at`=from or `"sea"`; no re-send, `retreat` |
-| `me.immuneUntilTick`, `me.isTraitor`, `me.betrayals` | tick immunity ends (0 = over); traitor now; lifetime count | AI attacks wait; tribe and cheap attacks while traitor |
+| `me.immuneUntilTick`, `me.traitorTicksLeft`, `me.betrayals` | tick immunity ends (0 = over); ticks my traitor mark lasts (0 = none); lifetime count | AI attacks wait; tribe and cheap attacks while traitor |
 | `neighbors[]`, `reachableByBoat[]`, `leaderboard[]` | land-border players; ≤10 non-neighbours sharing a water body with my shore, nearest first; top 5 by tiles incl. me and tribes | `attack` ids; `boat` ids (any view with `sharesSea`); who wins on timer |
 | `id`, `name`, `kind`, `tiles`, `troops`, `maxTroops`, `troopsPct`, `gold` | id for every tool; `"llm"` or `"tribe"`; size, army, cap, throttle, treasury | tribe = cheap, full loot; `troops/tiles` = density (§3); <100 tiles = dead |
-| `relation`, `allied`, `isTraitor`, `betrayals`, `allies[]`, `targets[]` | ledger (§7); allied with me; traitor now; lifetime; their allies; ids they marked | trust; traitor = cheap target; avoid allies of the strong |
+| `relation`, `allied`, `traitorTicksLeft`, `betrayals`, `allies[]` | how I regard them: my ledger of their acts on me (§7), not theirs of mine; allied with me; ticks their traitor mark lasts; lifetime; their allies | trust; traitor = half-cost target while > 0; avoid allies of the strong |
 | `attackingMe`, `attacking[]`, `attackedBy[]`, `tilesDelta1m` | attack on me; ids they attack; ids attacking them; their net tiles last minute | besieged or shrinking = cheap; growing = threat |
 | `coastal`, `sharesSea`, `sharedBorderTiles`, `direction`, `distance`, `structures` | owns ocean shore (sampled); their shore and mine touch the same water body = `boat` legal; my border tiles touching them (exact, whole border); compass and Manhattan distance of cluster centres; Σ levels of finished structures | port; boat; front width = speed (§3); boat ticks ≈ distance; posts, silos |
 | `canBuild[{unit,cost}]`, `buildCosts`, `build[unit]{cost,affordable,placeable,upgradable,note}`, `nukes{silos,costs,affordable}` | affordable-and-placeable now; every price; why a build fails; levellable type; silos, warhead prices, launchable now | `build`; `upgrade`; `nuke` |
@@ -133,7 +133,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 1. Spawn: free land in more than one direction, coast plus interior; reject cells whose only exit is water or another's pick.
 2. IF `unclaimedLandAdjacent` and `freeLandAtBorder` > ~50: `expand` (ratio 0.3–0.5); ≥6,600 troops saturates plains speed.
 3. IF `troopsPct` ≥ 80: spend (expand/attack/boat) or `build City` (`upgrade("City")` when no tile is 15 from my other structures: same price, same +250k).
-4. IF `gold` covers the bottleneck: City when the cap throttles; Port only for trade (`tradePartnerPorts` > 0: another AI's Port on the same sea) or Warships, never for boats (boats need only a shore tile); Defense Post `at` = the pressing neighbour; Factory once a City/Port stands within 110 tiles; SAM only when a rival's `structures["Missile Silo"]` > 0. Idle gold earns nothing; a second Port costs double.
+4. IF `gold` covers the bottleneck: City when the cap throttles; Port only for trade (`tradePartnerPorts` > 0: another AI's Port on the same sea) or Warships, never for boats (boats need only a shore tile); Defense Post `at` = the pressing neighbour; Factory once a City/Port stands within 110 tiles; SAM only when a rival's `structures["Missile Silo"]` > 0. Idle gold earns nothing; Port and Factory share one price ladder, so either doubles the next of both.
 5. IF `freeLandAtBorder` ≈ 0: target by §3: lowest `troops/tiles`, widest `sharedBorderTiles`, non-empty `attackedBy`, no Defense Posts, `tilesDelta1m` < 0; stack ≥ 1.7 × their troops (D/A ≤ 0.6).
 6. IF `reachableByBoat` has a tribe with high `gold` and low `troops/tiles`: `boat` with troops above their army, then `expand` from the beachhead.
 7. IF `incomingAttacks` non-empty: keep ≥1/3 of troops home; counter-cancel (§3) when my stack matches theirs; `retreat` elsewhere first.
