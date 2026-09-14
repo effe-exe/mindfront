@@ -56,7 +56,7 @@ import type { TileRef } from "../src/core/game/GameMap";
 import { NodeGameMapLoader } from "../tests/perf/fullgame/NodeGameMapLoader";
 import { systemPrompt } from "./decide";
 import { createArenaServer, ToolLine } from "./mcp/server";
-import { trackHistory } from "./observe";
+import { hasFreeLandBorder, trackHistory } from "./observe";
 import { runPlayer } from "./player";
 import { DEFAULT_INTERVAL_TICKS, EventLine, PlayerCtx, RosterEntry } from "./types";
 
@@ -157,6 +157,8 @@ interface Seat extends PlayerCtx {
   briefed: boolean;
   /** attack ids already announced to this seat */
   seenAttacks: Set<string>;
+  /** seat.errors when the safety net last fired */
+  errorsAtLastAction: number;
 }
 
 const seats: Seat[] = roster.map((r) => ({
@@ -183,6 +185,7 @@ const seats: Seat[] = roster.map((r) => ({
   abort: new AbortController(),
   briefed: false,
   seenAttacks: new Set(),
+  errorsAtLastAction: 0,
 }));
 
 // ---------- lobby ----------
@@ -578,7 +581,7 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     ]);
   }
   for (const d of u[GameUpdateType.DisplayEvent]) {
-    if (!/nuke|mirv/i.test(d.message)) continue;
+    if (!/nuke|mirv|bomb_detonated|intercept/i.test(d.message)) continue;
     const p = d.playerID === null ? null : g.playerBySmallID(d.playerID);
     simEvent("nuke", d.message, p !== null && p.isPlayer() ? [p.name()] : []);
   }
@@ -657,10 +660,15 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
   }
   for (const seat of seats) {
     if (seat.me === null || !seat.me.isAlive()) continue;
-    // Safety net: a seat that has not acted for 30 s still expands into free land.
-    if (gu.tick - seat.lastActionTick >= 300) {
+    // Safety net, only for a seat whose model is failing (timeouts/errors in
+    // its last rounds) and idle 30 s: expand with a small stack, and tell it.
+    if (gu.tick - seat.lastActionTick >= 300 && seat.errors > seat.errorsAtLastAction) {
       seat.lastActionTick = gu.tick;
-      for (const intent of fallbackIntents(g, seat.me)) send(seat, { type: "intent", intent });
+      seat.errorsAtLastAction = seat.errors;
+      const intents = fallbackIntents(g, seat.me);
+      for (const intent of intents) send(seat, { type: "intent", intent });
+      if (intents.length > 0)
+        note(seat, `t${gu.tick} arena safety net: your model calls were failing, so the arena expanded into free land with 10% of your army`);
     }
   }
 }
@@ -716,8 +724,8 @@ function autoSpawn(g: Game) {
 
 /** expand into unclaimed land, or nothing */
 function fallbackIntents(g: Game, me: Player): Intent[] {
-  if (!me.sharesBorderWith(g.terraNullius())) return [];
-  return [{ type: "attack", targetID: null, troops: null }];
+  if (!hasFreeLandBorder(g, me)) return [];
+  return [{ type: "attack", targetID: null, troops: Math.floor(me.troops() * 0.1) }];
 }
 
 // ---------- exit ----------

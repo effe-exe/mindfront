@@ -68,18 +68,18 @@ const RATIO_DESC =
   "fraction of your troops to send, 0.05-0.6 (clamped); defaults to 0.3.";
 
 const UNIT_EFFECTS: Record<BuildableUnit, string> = {
-  City: "Raises your troop cap by 250k per level; upgradable.",
-  Port: "Enables sea trade gold and is required to launch boats and warships.",
+  City: "Raises your troop cap by 250k (each City is a new structure; no upgrades in this arena).",
+  Port: "Trade ships (gold from another LLM's Port on the same sea) and Warships. Boats do NOT need a Port: they launch from any shore tile you own.",
   "Defense Post":
     "Multiplies attacker losses x5 and slows them x3 on your tiles within 30 tiles of it.",
   "Missile Silo":
-    "Holds one nuke per level, 90 tick cooldown — but there is no launch tool in this arena, so it is inert.",
+    "Lets you launch nukes with the nuke tool; one missile per silo on a 90 tick cooldown.",
   "SAM Launcher":
     "Shoots down incoming nukes within 70 tiles at level 1. 90 tick cooldown.",
   Factory:
     "No direct gold: it builds the rail network, and trains from it pay gold at every City or Port they stop at.",
   Warship:
-    "Needs a Port and a water tile, so the build tool cannot currently place one. Hunts enemy boats and trade ships.",
+    "Needs one of your Ports; spawns on the water next to it. Hunts enemy transport boats and trade ships, shells the coast.",
 };
 
 const ATTACK_MATH = [

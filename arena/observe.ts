@@ -56,6 +56,20 @@ const RELATION_NAMES: Relation[] = [
   "friendly",
 ];
 
+/**
+ * Land-only "free land touches me": sharesBorderWith(terraNullius) is true for
+ * every coastal player because water is unowned too (engine's own AI has the
+ * same helper, AiAttackBehavior.hasLandBorderWithTerraNullius).
+ */
+export function hasFreeLandBorder(game: Game, p: Player): boolean {
+  for (const b of p.borderTiles()) {
+    for (const n of game.neighbors(b)) {
+      if (game.isLand(n) && !game.hasOwner(n)) return true;
+    }
+  }
+  return false;
+}
+
 // Cheap coastal check: scan at most `cap` border tiles instead of the whole
 // border (borders can be thousands of tiles on a big blob).
 function hasCoast(game: Game, p: Player, cap = 300): boolean {
@@ -273,7 +287,8 @@ export function viewPlayer(game: Game, me: Player, p: Player): ObsNeighbor {
 export function minutesLeft(game: Game): number | null {
   const max = game.config().gameConfig().maxTimerValue;
   if (typeof max !== "number") return null;
-  return round1(Math.max(0, max - game.ticks() / TICKS_PER_MIN));
+  // The engine's timer runs from the end of the spawn phase, not from tick 0.
+  return round1(Math.max(0, max - game.elapsedGameSeconds() / 60));
 }
 
 export function observe(
@@ -393,9 +408,11 @@ export function observe(
     const left = al.expiresAt() - game.ticks();
     if (left <= 300) alerts.push(`ALLIANCE with ${al.other(me).name()} (id ${al.other(me).smallID()}) expires in ${Math.max(0, left)} ticks: that border reopens both ways.`);
   }
-  const unclaimedLandAdjacent = me.sharesBorderWith(game.terraNullius());
+  const unclaimedLandAdjacent = hasFreeLandBorder(game, me);
   if (!unclaimedLandAdjacent && freeLandAtBorder === 0)
     alerts.push("NO FREE LAND at your border: expand gains nothing; grow by attack or boat.");
+  if (me.numTilesOwned() < 100)
+    alerts.unshift(`ONLY ${me.numTilesOwned()} TILES: below 100, the next tile lost to any attack ends you (all land and gold to the attacker). Grow past 100 now.`);
   if (myMaxTroops > 0 && me.troops() / myMaxTroops >= 0.85)
     alerts.push(`TROOPS AT ${Math.round((me.troops() / myMaxTroops) * 100)}% OF CAP: regen is throttled; spend troops or build a City.`);
 
@@ -497,7 +514,7 @@ type Translated = { intent: Intent } | { intents: Intent[] } | { reason: string 
 function translate(game: Game, me: Player, action: Action): Translated {
   switch (action.type) {
     case "expand": {
-      if (!me.sharesBorderWith(game.terraNullius())) {
+      if (!hasFreeLandBorder(game, me)) {
         return {
           reason:
             "no unclaimed land borders you right now; try attack or boat instead",
@@ -704,12 +721,23 @@ function translate(game: Game, me: Player, action: Action): Translated {
       const t = action.target === undefined ? null : resolveTarget(game, action.target);
       if (action.target !== undefined && !t)
         return { reason: `target ${action.target} does not exist` };
+      // A model "retreats from X" meaning either its own attack on X or X's
+      // attack on it. Only its own attacks can be cancelled; say so plainly.
       const ids = me
         .outgoingAttacks()
         .filter((a) => !a.retreating() && (t === null || a.target() === t))
         .map((a) => a.id());
-      if (ids.length === 0)
-        return { reason: t === null ? "you have no attack running" : `no attack of yours is running against ${action.target}` };
+      if (ids.length === 0) {
+        const attackedByT = t !== null && me.incomingAttacks().some((a) => a.attacker() === t);
+        return {
+          reason:
+            t === null
+              ? "you have no attack running"
+              : attackedByT
+                ? `${action.target} is attacking YOU; retreat only cancels your own attacks. To defend: keep troops home, build(Defense Post, at:${action.target}) or attack(${action.target}) to counter`
+                : `no attack of yours is running against ${action.target}`,
+        };
+      }
       return { intents: ids.map((attackID) => ({ type: "cancel_attack", attackID })) };
     }
 
