@@ -585,7 +585,10 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
   for (const d of u[GameUpdateType.DisplayEvent]) {
     if (!/nuke|mirv|bomb_detonated|intercept/i.test(d.message)) continue;
     const p = d.playerID === null ? null : g.playerBySmallID(d.playerID);
-    simEvent("nuke", d.message, p !== null && p.isPlayer() ? [p.name()] : []);
+    // d.message is an i18n key ("events_display.atom_bomb_detonated"); the
+    // player it is shown to is the one whose land was hit.
+    const text = d.message.replace(/^events_display\./, "").replace(/_/g, " ");
+    simEvent("nuke", p !== null && p.isPlayer() ? `${text} on ${p.name()}` : text, p !== null && p.isPlayer() ? [p.name()] : []);
   }
   // Communication from other players lands in the recipient's recentEvents so
   // models can signal each other (alliances, threats) through emoji and chat.
