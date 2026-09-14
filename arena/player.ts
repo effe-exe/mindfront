@@ -188,7 +188,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
             tools,
             tool_choice: "auto",
           }),
-          signal: AbortSignal.timeout(20_000),
+          signal: AbortSignal.timeout(30_000),
         });
         if (!res.ok) {
           const body = await res.text().catch(() => "");
