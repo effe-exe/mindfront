@@ -113,6 +113,24 @@ describe("arena/observe", () => {
     ).toBe(0);
   });
 
+  test("an enemy boat sailing at my land shows in incomingBoats and alerts", () => {
+    player2.buildUnit(UnitType.TransportShip, game.ref(60, 60), {
+      troops: 700,
+      targetTile: game.ref(11, 11),
+    });
+    // a recalled boat (target = its owner's own shore) is not incoming
+    player2.buildUnit(UnitType.TransportShip, game.ref(61, 61), {
+      troops: 5,
+      targetTile: game.ref(60, 60),
+    });
+    const obs = observe(game, player1, ctx(), []);
+    expect(obs.me.incomingBoats).toEqual([
+      { from: player2.smallID(), troops: 700, tilesAway: 98 },
+    ]);
+    expect(obs.alerts.some((a) => /BOAT INCOMING/.test(a) && /700 troops/.test(a))).toBe(true);
+    expect(observe(game, player2, ctx(player2), []).me.incomingBoats).toEqual([]);
+  });
+
   test("drops an attack on a non-bordering player with a reason", () => {
     const obs = observe(game, player1, ctx(), []);
     expect(player1.sharesBorderWith(player2)).toBe(false);

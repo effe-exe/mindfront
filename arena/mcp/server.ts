@@ -391,7 +391,8 @@ export function createArenaServer(opts: ArenaServerOpts): {
           o.obs.leaderboard.some((l) => l.id === id) ||
           o.obs.me.allies.includes(id) ||
           o.obs.me.pendingAllianceRequestsFrom.includes(id) ||
-          o.obs.me.incomingAttacks.some((x) => x.from === id);
+          o.obs.me.incomingAttacks.some((x) => x.from === id) ||
+          o.obs.me.incomingBoats.some((x) => x.from === id);
         if (p === undefined || !p.isPlayer() || !known) {
           return { ok: false, reason: `unknown id ${id}` };
         }

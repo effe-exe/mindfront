@@ -203,6 +203,7 @@ export const sanitize: Sanitize = (decision, obs) => {
     ...pendingIds,
     ...obs.leaderboard.map((l) => l.id),
     ...obs.me.incomingAttacks.map((a) => a.from),
+    ...obs.me.incomingBoats.map((b) => b.from),
   ]);
 
   const kept: Action[] = [];
@@ -408,6 +409,7 @@ if (
       allies: [7],
       pendingAllianceRequestsFrom: [3],
       incomingAttacks: [],
+      incomingBoats: [],
       outgoingAttacks: [],
       maxTroops: 10_000,
       troopsPct: 10,

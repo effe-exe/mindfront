@@ -108,7 +108,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 
 | Field | Meaning | Decision |
 | --- | --- | --- |
-| `alerts[]` | UNDER ATTACK (who, troops, % of my army); ALLIANCE REQUEST; ALLIANCE expiring ≤300 ticks (who asked to renew); NO FREE LAND; TROOPS ≥85% OF CAP | handle first |
+| `alerts[]` | UNDER ATTACK (who, troops, % of my army); BOAT INCOMING (who, troops, ticks out); ALLIANCE REQUEST; ALLIANCE expiring ≤300 ticks (who asked to renew); NO FREE LAND; TROOPS ≥85% OF CAP | handle first |
 | `tick`, `minute`, `game.tick`, `game.minutesLeft`, `game.totalLandTiles`, `game.mapWidth`, `game.mapHeight` | clock (`minutesLeft` null = untimed); win denominator pre-fallout; map extent | endgame (§0.1); scale for `landPct`, `center`, `bbox` |
 | `me.id`, `me.name`, `me.center{x,y}`, `me.bbox{minX,minY,maxX,maxY}` | my id (`me` on `map_overview`); centre and box of my largest cluster | never a target; with `direction`/`distance`, who is where |
 | `me.tiles`, `me.landPct`, `me.tilesDelta1m` | land; % of all; net tiles last minute | stalled → new target or route |
@@ -117,7 +117,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `me.cities`, `me.ports`, `me.defensePosts`, `me.silos`, `me.structures`, `me.underConstruction`, `me.boatsInFlight` | Σ levels of finished structures (`structures` = all 7 types); still building per type (no effect yet); transports at sea, max 3 | next price on each ladder; wait before counting on it; can `boat` |
 | `me.units[{id,type,level,underConstruction,x,y}]` | every structure I own, ≤40 nearest my centre | `upgrade` id; which City/Port is exposed |
 | `me.allies`, `me.allianceExpiry[{id,ticksLeft,theyAgreedToExtend,iAgreedToExtend}]`, `me.pendingAllianceRequestsFrom`, `me.pendingRequestExpiry[{id,ticksLeft}]` | allies; ticks until each expires and who has asked to renew; offers awaiting me and ticks until they lapse | which border is frozen, how long; `extend_alliance` when `ticksLeft` ≤ 300 or they asked; accept / reject |
-| `me.incomingAttacks[{from,troops}]`, `me.outgoingAttacks[{to,troops,troopsRemaining}]` | attacks on me, current stacks; my running attacks (`to` = id or `"land"`; both troop fields = current stack) | reserve, counter-cancel (§3), Defense Post `at`=from; no re-send, `retreat` |
+| `me.incomingAttacks[{from,troops}]`, `me.incomingBoats[{from,troops,tilesAway}]`, `me.outgoingAttacks[{to,troops,troopsRemaining}]` | attacks on me, current stacks; enemy transports sailing at my land (1 tile/tick); my running attacks (`to` = id or `"land"`; both troop fields = current stack) | reserve, counter-cancel (§3), Defense Post `at`=from or `"sea"`; no re-send, `retreat` |
 | `me.immuneUntilTick`, `me.isTraitor`, `me.betrayals` | tick immunity ends (0 = over); traitor now; lifetime count | AI attacks wait; tribe and cheap attacks while traitor |
 | `neighbors[]`, `reachableByBoat[]`, `leaderboard[]` | land-border players; ≤6 coastal non-neighbours nearest first (only if I own shore); top 5 by tiles incl. me and tribes | `attack` ids; `boat` ids; who wins on timer |
 | `id`, `name`, `kind`, `tiles`, `troops`, `maxTroops`, `troopsPct`, `gold` | id for every tool; `"llm"` or `"tribe"`; size, army, cap, throttle, treasury | tribe = cheap, full loot; `troops/tiles` = density (§3); <100 tiles = dead |
@@ -125,7 +125,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `attackingMe`, `attacking[]`, `attackedBy[]`, `tilesDelta1m` | attack on me; ids they attack; ids attacking them; their net tiles last minute | besieged or shrinking = cheap; growing = threat |
 | `coastal`, `sharedBorderTiles`, `direction`, `distance`, `structures` | owns shore (sampled); my border tiles touching them (≤2,000 scanned); compass and Manhattan distance of cluster centres; Σ levels of finished structures | boat/port; front width = speed (§3); boat ticks = distance; posts, silos |
 | `canBuild[{unit,cost}]`, `buildCosts`, `build[unit]{cost,affordable,placeable,upgradable,note}`, `nukes{silos,costs,affordable}` | affordable-and-placeable now; every price; why a build fails; levellable type; silos, warhead prices, launchable now | `build`; `upgrade`; `nuke` |
-| `recentEvents[]`, `globalEvents[]` | ≤8 involving me: attacks on me, conquests, alliances, betrayals, nukes, emoji/chat to me; ≤10 map-wide (`t<tick>` prefix) | threats; who fights whom |
+| `recentEvents[]`, `globalEvents[]` | ≤8 involving me: attacks, boats and nukes launched at me, conquests, alliances, betrayals, emoji/chat to me; ≤10 map-wide (`t<tick>` prefix) | threats; who fights whom |
 | `plan`, `notes`, `lastResult` | §0.6–0.7 | continuity |
 
 ## 11. Decision defaults (starting points, not rules)

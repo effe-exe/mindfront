@@ -124,6 +124,8 @@ export interface Obs {
     allies: number[];
     pendingAllianceRequestsFrom: number[];
     incomingAttacks: { from: number; troops: number }[];
+    /** enemy transports sailing at my land: sender, troops aboard, tiles still to sail (1 tile/tick) */
+    incomingBoats: { from: number; troops: number; tilesAway: number }[];
     outgoingAttacks: {
       to: number | "land";
       troops: number;

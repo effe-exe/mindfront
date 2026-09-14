@@ -28,6 +28,7 @@ import {
   GameType,
   Player,
   AllPlayers,
+  UnitType,
 } from "../src/core/game/Game";
 import {
   ErrorUpdate,
@@ -606,6 +607,17 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     if (!from.isPlayer() || seat === undefined) continue;
     const about = c.target === undefined ? "" : ` (about ${g.player(c.target).name()})`;
     note(seat, `${from.name()} says "${c.category}.${c.key}"${about}`);
+  }
+
+  // Boats and nukes launched at a seat: the engine announces each unit once to
+  // its target (TransportShipExecution.init, NukeExecution) as UnitIncoming.
+  for (const x of u[GameUpdateType.UnitIncoming]) {
+    const seat = seats.find((s) => s.me?.smallID() === x.playerID);
+    const unit = g.unit(x.unitID);
+    if (seat === undefined || unit === undefined) continue;
+    const from = unit.owner();
+    const what = unit.type() === UnitType.TransportShip ? `a boat with ${Math.round(unit.troops())} troops` : `a ${unit.type()}`;
+    note(seat, `t${g.ticks()} ${from.name()} (id ${from.smallID()}) launched ${what} at you`);
   }
 
   // A new attack on a seat is an event, not just a field: it must reach the

@@ -493,6 +493,21 @@ export function observe(
         "Options: attack back on that border, build a Defense Post there, keep troops home, ally someone else, retreat other attacks.",
     );
   }
+  // Enemy boats heading for my shore (their targetTile is a tile I own; a
+  // recalled boat targets its owner's shore instead).
+  const incomingBoats: Obs["me"]["incomingBoats"] = [];
+  for (const b of game.units(UnitType.TransportShip)) {
+    const dst = b.targetTile();
+    if (b.owner() === me || dst === undefined || game.owner(dst) !== me) continue;
+    incomingBoats.push({ from: b.owner().smallID(), troops: Math.round(b.troops()), tilesAway: game.manhattanDist(b.tile(), dst) });
+  }
+  for (const b of incomingBoats) {
+    const from = game.playerBySmallID(b.from);
+    alerts.push(
+      `BOAT INCOMING from ${from.isPlayer() ? from.name() : "?"} (id ${b.from}, ${b.troops} troops), ~${b.tilesAway} ticks out: it takes the beach tile on landing, then attacks from there. ` +
+        "Keep troops home, or build(Defense Post, at:\"sea\") on that coast.",
+    );
+  }
   for (const a of me.incomingAllianceRequests()) {
     alerts.push(`ALLIANCE REQUEST from ${a.requestor().name()} (id ${a.requestor().smallID()}): accept_alliance or reject_alliance before it expires.`);
   }
@@ -551,6 +566,7 @@ export function observe(
           from: a.attacker().smallID(),
           troops: Math.round(a.troops()),
         })),
+      incomingBoats,
       outgoingAttacks: me.outgoingAttacks().map((a) => {
         const t = a.target();
         const troops = Math.round(a.troops());
