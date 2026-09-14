@@ -216,6 +216,7 @@ describe("arena/mcp", () => {
     expect(sent[1]).toEqual({ type: "donate_gold", recipient: player2.id(), gold: 5000 });
     // the engine's cooldown starts when a donation lands
     player1.donateTroops(player2, 10);
+    for (let i = 0; i < 11; i++) game.executeNextTick(); // past the double-spend window
     expect((await call("donate", { target: player2.smallID(), gold: 10 })).reason).toMatch(/10 s/);
   });
 
@@ -247,6 +248,20 @@ describe("arena/mcp", () => {
     expect((await call("upgrade", { unit: "Defense Post" })).reason).toMatch(/cannot be upgraded/);
     expect(await call("upgrade", { unit: "City" })).toEqual({ ok: true });
     expect(sent).toEqual([{ type: "upgrade_structure", unit: UnitType.City, unitId: city.id() }]);
+  });
+
+  test("two purchases in one round cannot spend the same gold", async () => {
+    const obs = await call("observe");
+    player1.addGold(BigInt(obs.build.City.cost));
+    expect(await call("build", { unit: "City" })).toEqual({ ok: true });
+    // the engine has not charged yet (intents only reach `sent` here), so the
+    // live gold still covers a second City: the server must refuse it
+    const r = await call("build", { unit: "City" });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/committed/);
+    expect(sent).toHaveLength(1);
+    for (let i = 0; i < 11; i++) game.executeNextTick();
+    expect(await call("build", { unit: "City" })).toEqual({ ok: true });
   });
 
   test("say emits a tool event line", async () => {

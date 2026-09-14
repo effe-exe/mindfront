@@ -25,6 +25,7 @@ import {
   type Action,
   type BuildableUnit,
   type EventLine,
+  type Obs,
   type PlayerCtx,
   NUKE_TYPES,
 } from "../types";
@@ -96,6 +97,28 @@ const ATTACK_MATH = [
 ].join(" ");
 
 const MAX_MAP_SAMPLES = 20_000;
+
+/** Gold an action will cost when its execution runs (charged at buildUnit /
+ * upgradeUnit / donateGold a tick or two after the send, so the live gold
+ * still shows it for a moment). */
+function goldCost(action: Action, obs: Obs): number {
+  switch (action.type) {
+    case "build":
+    case "upgrade":
+      return action.unit === undefined ? 0 : obs.build[action.unit].cost;
+    case "nuke":
+      return action.nuke === undefined ? 0 : obs.nukes.costs[action.nuke];
+    case "donate":
+      return Math.min(action.gold ?? 0, obs.me.gold);
+    default:
+      return 0;
+  }
+}
+/** gold each seat committed recently; the engine has not deducted it yet.
+ * ponytail: a 10-tick window, so a purchase right after one that already
+ * landed can be refused for up to a second; track the charge if that bites. */
+const COMMIT_WINDOW_TICKS = 10;
+const committed = new Map<SeatHandle, { tick: number; gold: number }>();
 
 /** Coarse cols x rows text map of the world, majority owner per cell. */
 function mapOverview(
@@ -313,11 +336,21 @@ export function createArenaServer(opts: ArenaServerOpts): {
       if (clean.dropped.length > 0) {
         return { ok: false, reason: clean.dropped[0].reason };
       }
+      const cost = goldCost(action, o.obs);
+      const c = committed.get(seat!);
+      const pending = c !== undefined && o.game.ticks() - c.tick <= COMMIT_WINDOW_TICKS ? c.gold : 0;
+      if (cost > 0 && pending > 0 && cost > o.obs.me.gold - pending) {
+        return {
+          ok: false,
+          reason: `you committed ${pending} gold in the last second (charged a tick after the send, so gold still reads ${o.obs.me.gold}); ${o.obs.me.gold - pending} left, this costs ${cost}: wait for the next round`,
+        };
+      }
       const acted = toIntents(o.game, o.me, o.obs, clean.decision, seat!.ctx);
       if (acted.dropped.length > 0) {
         return { ok: false, reason: acted.dropped[0].reason };
       }
       for (const intent of acted.intents) seat!.send(intent);
+      if (cost > 0) committed.set(seat!, { tick: o.game.ticks(), gold: pending + cost });
       return { ok: true };
     }
 
@@ -600,7 +633,11 @@ export function createArenaServer(opts: ArenaServerOpts): {
         "Defense Post strengthens nearby borders; Factory builds rail and trains that " +
         "earn gold; SAM Launcher shoots incoming nukes down. See game_info for what " +
         "each one does and costs. Only units listed in observe.canBuild are affordable " +
-        "right now; observe.buildCosts shows every price so you can save up. " +
+        "right now; observe.buildCosts shows every price so you can save up. Needs a tile " +
+        "of yours at least 15 tiles from your other structures (upgrade instead when there " +
+        "is none); builds in 20 (City, Factory) / 50 (Port, Defense Post) / 100 (Silo) / " +
+        "300 (SAM) ticks and counts only once finished; gold is charged a tick after the " +
+        "send and never refunded, so two purchases in one round are checked against one purse. " +
         "at: WHERE to put it: a player id places it on the border facing that player " +
         "(a Defense Post goes where it covers the most of that front, 30-tile range); " +
         "\"sea\" places it on your coast; omit it to let the arena pick any legal spot.",

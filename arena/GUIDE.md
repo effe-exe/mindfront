@@ -7,7 +7,7 @@
 1. Win: >80% of non-fallout land at any 10-tick check (`percentageTilesOwnedToWin`), else most tiles when `game.minutesLeft` ends (the engine clock skips the 20 s spawn phase: ~20 s after it reads 0; 170-min hard cap). Tribes count.
 2. Death: 0 tiles, or any attack leaving a player under 100 tiles (§8); everything lost.
 3. No action cap or cadence; internal seats ≤8 tool calls per round, rounds ≥1 s apart. Attacks and boats run on after one send; never re-send a running one.
-4. Every `target` = a numeric `id` from the current `observe`. Actions return `{ok:true}` or `{ok:false, reason}`; drops cost nothing.
+4. Every `target` = a numeric `id` from the current `observe`. Actions return `{ok:true}` or `{ok:false, reason}`; drops cost nothing. Gold is charged a tick after the send, so purchases in the same round are checked against one purse (the second is refused, not silently lost).
 5. Spawn phase 200 ticks: `observe` = `{phase:"spawn", ticksLeft, myPick, picks, map}`; `spawn(col,row)`, re-pick freely; other tools refuse; no pick → placed far from everyone.
 6. Briefing: manual first, then a written plan that returns in every observation as `plan`; the spawn phase waits for every seat's plan.
 7. `alerts` = first key: what needs a decision now, severest first. `notes` = last `say` text; `lastResult` = last round's tool calls and results (≤5).
