@@ -131,6 +131,21 @@ describe("arena/observe", () => {
     expect(observe(game, player2, ctx(player2), []).me.incomingBoats).toEqual([]);
   });
 
+  test("nuke is refused while the blast would cover my own tiles", () => {
+    player1.buildUnit(UnitType.MissileSilo, game.ref(11, 11), {});
+    // TestConfig blast radius is 1: a target tile next to mine hits my land
+    for (let x = 60; x <= 62; x++) for (let y = 60; y <= 62; y++) player2.relinquish(game.ref(x, y));
+    player2.conquer(game.ref(13, 11));
+    const obs = observe(game, player1, ctx(), []);
+    expect(obs.nukes.affordable).toContain("Atom Bomb");
+    const launch = () =>
+      toIntents(game, player1, obs, { reasoning: "", notes: "", actions: [{ type: "nuke", target: player2.smallID(), nuke: "Atom Bomb" }] }, ctx());
+    expect(launch().dropped[0].reason).toMatch(/your own tiles/);
+    player2.relinquish(game.ref(13, 11));
+    player2.conquer(game.ref(61, 61));
+    expect(launch().intents[0]).toMatchObject({ type: "build_unit", unit: UnitType.AtomBomb, tile: game.ref(61, 61) });
+  });
+
   test("drops an attack on a non-bordering player with a reason", () => {
     const obs = observe(game, player1, ctx(), []);
     expect(player1.sharesBorderWith(player2)).toBe(false);

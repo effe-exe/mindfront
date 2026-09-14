@@ -13,6 +13,10 @@ import { manhattanDistFN, type TileRef } from "../src/core/game/GameMap";
 import { type Intent, QuickChatKeySchema } from "../src/core/Schemas";
 import { flattenedEmojiTable } from "../src/core/Util";
 import {
+  computeNukeBlastCounts,
+  wouldNukeBreakAlliance,
+} from "../src/core/execution/Util";
+import {
   type Action,
   type ActResult,
   type BBox,
@@ -987,6 +991,26 @@ function translate(game: Game, me: Player, action: Action): Translated {
       }
       if (best === undefined) return { reason: `target ${action.target} owns no land` };
       const unitType = NUKE_MAP[action.nuke];
+      // NukeExecution strips every owner's tiles and deletes every owner's
+      // units inside the outer radius, mine included, and breaks any alliance
+      // whose land (>100 weighted tiles) or structures are hit
+      // (listNukeBreakAlliance). MIRV has no single magnitude: its 350
+      // warheads spread over the target's land, so only the ally check applies.
+      if (unitType !== UnitType.MIRV) {
+        const magnitude = game.config().nukeMagnitudes(unitType);
+        const own = computeNukeBlastCounts({ gm: game, targetTile: best, magnitude }).get(me.smallID()) ?? 0;
+        if (own > 0)
+          return { reason: `the ${action.nuke} blast (${magnitude.outer}-tile radius around the middle of ${action.target}'s land) would cover ~${Math.ceil(own)} of your own tiles and delete your structures there; nuke a target whose middle is farther from your border` };
+        const breaks = wouldNukeBreakAlliance({
+          game,
+          targetTile: best,
+          magnitude,
+          allySmallIds: new Set(me.allies().map((a) => a.smallID())),
+          threshold: game.config().nukeAllianceBreakThreshold(),
+        });
+        if (breaks)
+          return { reason: `the blast would hit an ally's land or structures and break that alliance (traitor mark); pick another target or break_alliance first` };
+      }
       if (me.canBuild(unitType, best) === false)
         return {
           reason: `cannot launch ${action.nuke} now (need ${Number(game.unitInfo(unitType).cost(game, me))} gold, a ready silo, and a target outside spawn immunity)`,

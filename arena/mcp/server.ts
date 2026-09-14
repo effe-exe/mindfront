@@ -676,10 +676,13 @@ export function createArenaServer(opts: ArenaServerOpts): {
     action(
       "nuke",
       "Launch a warhead from one of your Missile Silos at a player's territory (the arena aims " +
-        "at the middle of their land). Atom Bomb 750k gold, Hydrogen Bomb 5M, MIRV 25M+ " +
-        "(350 warheads, needs an owned target tile). Destroys land into permanent fallout, kills " +
-        "troops in the blast, and enemy SAM Launchers can intercept it. Nuking an ally breaks the " +
-        "alliance and marks you a traitor. See observe.nukes for silos, prices and what you can launch now.",
+        "at the middle of their land). Atom Bomb 750k gold (12/30-tile radius), Hydrogen Bomb 5M " +
+        "(80/100), MIRV 25M+ (350 warheads over their land). Destroys land into permanent fallout, " +
+        "kills troops in the blast, deletes EVERY owner's structures inside the outer radius (yours " +
+        "too), and breaks any alliance whose land or structures it hits; enemy SAM Launchers within " +
+        "70 tiles intercept. Refused when the blast would touch your own tiles, an ally, or the " +
+        "target is your ally; blocked during spawn immunity. Needs a finished silo off cooldown " +
+        "(90 ticks) and the gold: see observe.nukes.",
       { target: z.number().int(), nuke: z.enum(NUKE_TYPES) },
       (a) => ({ type: "nuke", target: a.target as number, nuke: a.nuke as Action["nuke"] }),
     );

@@ -59,7 +59,7 @@ n = already built of that type, upgrades included. Gold charged at start, never 
 
 ## 6. Nukes
 
-`nuke(target, nuke)`: nearest ready silo fires at the target's tile nearest the middle of their land; no range limit; blocked during spawn immunity; flight 10 tiles/tick. Inner radius destroyed, outer ring 50% per tile, all units inside the outer radius deleted. Troops killed per impacted tile `5 × troops / tilesLeft` (`nukeDeathFactor`) from stock, running attacks and boats; MIRV warheads instead crush troops toward 3% of cap. Destroyed land = fallout until conquered: §3 multiplier, out of the win denominator.
+`nuke(target, nuke)`: nearest ready silo fires at the target's tile nearest the middle of their land; refused when the outer radius would cover any tile of mine (the blast strips tiles and deletes units of EVERY owner inside it, mine included) or break an alliance; no range limit; blocked during spawn immunity; flight 10 tiles/tick. Inner radius destroyed, outer ring 50% per tile, all units inside the outer radius deleted. Troops killed per impacted tile `5 × troops / tilesLeft` (`nukeDeathFactor`) from stock, running attacks and boats; MIRV warheads instead crush troops toward 3% of cap. Destroyed land = fallout until conquered: §3 multiplier, out of the win denominator.
 
 | Warhead | Gold | Radius in/out |
 | --- | --- | --- |
@@ -101,7 +101,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `build` | `unit`, `at?` | unit in `canBuild`; `at` visible id or `"sea"` | new structure (§5) | `build[unit].note`; no spot 15 from others; no border with `at`; no coast |
 | `upgrade` | `unit`, `id?` | `build[unit].affordable`; a finished one of that type in `me.units` | +1 level, instant (§5) | not upgradable (Defense Post, Warship); none owned; still building; unknown id; gold |
 | `retreat` | `target?` | a running attack (none = all, expands too) | survivors home, −25% vs a player, 0% vs unclaimed | no attack running |
-| `nuke` | `target`, `nuke` | `nukes.silos` > 0, `nuke` in `nukes.affordable`, not allied | §6 | no silo; unaffordable; allied; no ready silo or immunity; target owns no land |
+| `nuke` | `target`, `nuke` | `nukes.silos` > 0, `nuke` in `nukes.affordable`, not allied; blast clear of my tiles and of any ally's land/structures (`wouldNukeBreakAlliance`) | §6 | no silo; unaffordable; allied; own tiles in blast; would break an alliance; no ready silo or immunity; target owns no land |
 | `emoji`, `chat` | `emoji`/`key`, `target?` (chat: needed) | valid value; target visible (emoji omitted = all) | line in the recipient's `recentEvents` | unknown value; unknown target |
 
 ## 10. Observation
