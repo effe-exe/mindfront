@@ -1,0 +1,490 @@
+[
+ {
+  "type": "function",
+  "function": {
+   "name": "rules",
+   "description": "The full MindFront game manual: goal and win rules, the clock, troop and gold economy, how attacks resolve, sea and structures, diplomacy, every tool, and ho...",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "observe",
+   "description": "Your current view of the world as JSON: your tiles/troops/troop cap/gold/income/structures/map position, bordering neighbors (ids, relation, alliances, their...",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "inspect_player",
+   "description": "Full dossier on one player you can currently see (a neighbor, ally, attacker, leaderboard or boat-reachable id from observe): tiles, troops and troop cap, go...",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "description": "smallID from observe"
+     }
+    },
+    "required": [
+     "id"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "game_info",
+   "description": "The match constants that never change mid-game: map and size, land tiles, clock, win rule, alliance and immunity timers, defense post range, what every struc...",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "map_overview",
+   "description": "A coarse text map of the whole world: a grid where each cell names the player holding most of it, plus a legend with each player's cell coordinates.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "cols": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 24
+     },
+     "rows": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 12
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "expand",
+   "description": "Claim adjacent unclaimed land: 16/20/24 troops per plains/highland/mountain tile, no malus, survivors return when the front runs out.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "ratio": {
+      "type": "number"
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "attack",
+   "description": "Send troops at a bordering player.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     },
+     "ratio": {
+      "type": "number"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "boat",
+   "description": "Amphibious assault on any visible player whose sharesSea is true (observe.reachableByBoat lists the nearest 10 you do not border; a neighbour works too, for ...",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     },
+     "ratio": {
+      "type": "number"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "ally",
+   "description": "Offer an alliance to any visible id (not only neighbors).",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "accept_alliance",
+   "description": "Accept a pending alliance request.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "reject_alliance",
+   "description": "Reject a pending alliance request.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "break_alliance",
+   "description": "Break an alliance.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "extend_alliance",
+   "description": "Ask an ally to renew: when both sides have called this, the alliance resets to a full 5 minutes from that moment (no time window; tribes always agree within ...",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "donate",
+   "description": "Give an ally troops OR gold (one of them, a whole number; a 0 or 1 in the other field is ignored).",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     },
+     "troops": {
+      "type": "integer",
+      "exclusiveMinimum": 0
+     },
+     "gold": {
+      "type": "integer",
+      "exclusiveMinimum": 0
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "recall_boats",
+   "description": "Turn your boats around: every transport at sea, or only those sailing at target.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "embargo",
+   "description": "Stop trading with a player (stop: true lifts it).",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     },
+     "stop": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "target"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "move_warship",
+   "description": "Move a Warship's patrol point to water coordinates (x,y) on the same sea.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "x": {
+      "type": "integer"
+     },
+     "y": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "x",
+     "y"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "build",
+   "description": "Build a structure with gold.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "unit": {
+      "type": "string",
+      "enum": [
+       "City",
+       "Port",
+       "Defense Post",
+       "Missile Silo",
+       "SAM Launcher",
+       "Factory",
+       "Warship"
+      ]
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "string",
+        "const": "sea"
+       }
+      ]
+     }
+    },
+    "required": [
+     "unit"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "upgrade",
+   "description": "Raise one of your structures a level in place: instant, costs the same as the next new one of that type (the shared price ladder advances), no 15-tile spacin...",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "unit": {
+      "type": "string",
+      "enum": [
+       "City",
+       "Port",
+       "Defense Post",
+       "Missile Silo",
+       "SAM Launcher",
+       "Factory",
+       "Warship"
+      ]
+     },
+     "id": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "unit"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "spawn",
+   "description": "Spawn phase only: choose (or change) where you start.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "col": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23
+     },
+     "row": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 11
+     }
+    },
+    "required": [
+     "col",
+     "row"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "retreat",
+   "description": "Stop-loss: cancel your running attacks.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "nuke",
+   "description": "Launch a warhead from one of your Missile Silos at a player's territory.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "target": {
+      "type": "integer"
+     },
+     "nuke": {
+      "type": "string",
+      "enum": [
+       "Atom Bomb",
+       "Hydrogen Bomb",
+       "MIRV"
+      ]
+     }
+    },
+    "required": [
+     "target",
+     "nuke"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "emoji",
+   "description": "Send an emoji to one player, or to everyone when target is omitted.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "emoji": {
+      "type": "string"
+     },
+     "target": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "emoji"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "chat",
+   "description": "Send a quick-chat message to one player; it lands in their recentEvents, no game effect.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "key": {
+      "type": "string"
+     },
+     "target": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "key",
+     "target"
+    ]
+   }
+  }
+ }
+]

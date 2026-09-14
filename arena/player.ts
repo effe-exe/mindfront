@@ -9,12 +9,15 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { systemPrompt } from "./decide";
+import { LOCAL_MODEL_PREFIX, compactObs, localSystemPrompt, shortDescription, slimParameters } from "./local/prompt";
 import type { PlayerCtx } from "./types";
 
 /** models whose providers reject the `reasoning` parameter (learned at runtime) */
 const NO_REASONING = new Set<string>();
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+/** OpenRouter by default; MINDFRONT_LLM_URL points every seat at another
+ * OpenAI-compatible endpoint (the local sidecar in arena/local/serve.py). */
+const OPENROUTER_URL = process.env.MINDFRONT_LLM_URL ?? "https://openrouter.ai/api/v1/chat/completions";
 
 /** USD spent by every seat in this process (OpenRouter reports `usage.cost` per
  * response) and the ceiling after which seats stop calling models. */
@@ -87,19 +90,24 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   const fetchImpl = opts.fetchImpl ?? fetch;
 
   const listed = await client.listTools();
+  // "local/..." seats: a fine-tuned model on the sidecar, short prompt and
+  // one-line tool descriptions (the manual is baked in by training), no
+  // briefing, no OpenRouter-only fields.
+  const local = model.startsWith(LOCAL_MODEL_PREFIX);
   const tools: OpenAiTool[] = listed.tools.map((t) => ({
     type: "function",
-    function: { name: t.name, description: t.description, parameters: t.inputSchema },
+    function: { name: t.name, description: local ? shortDescription(t.description) : t.description, parameters: local ? slimParameters(t.inputSchema) : t.inputSchema },
   }));
-
   const ctxLike = { model, name, persona } as PlayerCtx;
-  const baseSystemPrompt =
+  const baseSystemPrompt = local ? localSystemPrompt(persona) :
     systemPrompt(ctxLike) +
     "\nYou act by calling tools. While observe reports phase \"spawn\", pick your start with `spawn(col,row)` from the grid it shows (consider where others already are), then wait for the match. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act. Do not narrate: tool calls are the only output that matters. Stop calling tools when you are done for this round.";
 
   // The manual is identical every round: mark it cacheable (Anthropic needs the
   // explicit breakpoint, ~90% off cached input; OpenAI/Google/xAI cache anyway).
-  const systemMessage = { role: "system", content: [{ type: "text", text: baseSystemPrompt, cache_control: { type: "ephemeral" } }] };
+  const systemMessage = local
+    ? { role: "system", content: baseSystemPrompt }
+    : { role: "system", content: [{ type: "text", text: baseSystemPrompt, cache_control: { type: "ephemeral" } }] };
 
   let lastResult = "";
 
@@ -107,7 +115,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   // it by writing its own plan before the spawn phase. The plan rides along in
   // every later observation as `plan`.
   let plan = "";
-  try {
+  if (local) onBriefed?.("");
+  else try {
     const res = await fetchImpl(OPENROUTER_URL, {
       method: "POST",
       headers: {
@@ -146,7 +155,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   } catch (err) {
     console.warn(`player[${model}]: briefing failed: ${String(err).slice(0, 120)}`);
   }
-  onBriefed?.(plan);
+  if (!local) onBriefed?.(plan);
 
   let overBudget = false;
   while (!signal?.aborted) {
@@ -175,6 +184,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
         await sleep(2000, signal);
         continue;
       }
+      if (local && obsObj?.me !== undefined) obsObj = compactObs(obsObj);
       obsObj.plan = plan;
       obsObj.lastResult = lastResult;
 
@@ -197,16 +207,21 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
           body: JSON.stringify({
             model,
             max_tokens: 1500,
-            usage: { include: true },
-            // Some models have no provider that accepts the reasoning knob; retried without it below.
-            ...(withReasoning ? { reasoning: { effort: "low" } } : {}),
-            // Only providers that honor tools/tool_choice; Llama was routed to one that did not.
-            provider: { require_parameters: true },
+            ...(local
+              ? {}
+              : {
+                  usage: { include: true },
+                  // Some models have no provider that accepts the reasoning knob; retried without it below.
+                  ...(withReasoning ? { reasoning: { effort: "low" } } : {}),
+                  // Only providers that honor tools/tool_choice; Llama was routed to one that did not.
+                  provider: { require_parameters: true },
+                }),
             messages,
             tools,
             tool_choice: "auto",
           }),
-          signal: AbortSignal.timeout(30_000),
+          // the sidecar prefills a few thousand tokens on the GPU before answering
+          signal: AbortSignal.timeout(local ? 180_000 : 30_000),
         });
         if (!res.ok) {
           const body = await res.text().catch(() => "");

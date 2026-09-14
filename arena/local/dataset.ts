@@ -1,0 +1,350 @@
+// Behaviour-cloning dataset from archived human games: replay each record
+// headlessly and, whenever a kept human acts, pair the observation they saw
+// (arena/observe.ts, exactly what a seat gets) with their intents translated
+// into our tool vocabulary. Output = mlx-lm "tools" format (one JSON per line).
+//
+// Run it INSIDE the worktree that sits at the engine commit the records were
+// played on (arena/local/sync-worktree.sh copies this file there), e.g.
+//   cd ~/mindfront-replay && npx tsx arena/local/dataset.ts ~/mindfront/arena/records/human --out ~/mindfront/arena/local/data
+//
+// Flags: --out DIR  --max-games N  --window 50  --keep 3 (top finishers per game)  --valid 0.05  --idle 0.1
+import fs from "fs";
+import path from "path";
+import { Config } from "../../src/core/configuration/Config";
+import { Executor } from "../../src/core/execution/ExecutionManager";
+import { PlayerInfo, PlayerType, UnitType, type Game, type Player } from "../../src/core/game/Game";
+import { createGame } from "../../src/core/game/GameImpl";
+import { GameUpdateType, type HashUpdate } from "../../src/core/game/GameUpdates";
+import { createNationsForGame } from "../../src/core/game/NationCreation";
+import { loadTerrainMap } from "../../src/core/game/TerrainMapLoader";
+import { GameRunner } from "../../src/core/GameRunner";
+import { PseudoRandom } from "../../src/core/PseudoRandom";
+import type { GameRecord, GameStartInfo, Intent } from "../../src/core/Schemas";
+import { decompressGameRecord, flattenedEmojiTable, simpleHash, toWireGameStartInfo } from "../../src/core/Util";
+import { NodeGameMapLoader } from "../../tests/perf/fullgame/NodeGameMapLoader";
+import { observe, trackHistory, UNIT_MAP } from "../observe";
+import { RATIO_MAX, RATIO_MIN, type BuildableUnit, type PlayerCtx } from "../types";
+import { compactObs, localSystemPrompt } from "./prompt";
+
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+const arg = (name: string, dflt: string) => {
+  const i = process.argv.indexOf(name);
+  return i === -1 ? dflt : process.argv[i + 1];
+};
+const recordsDir = process.argv[2];
+if (!recordsDir) throw new Error("usage: dataset.ts <recordsDir> --out <dir>");
+const outDir = arg("--out", "arena/local/data");
+const maxGames = Number(arg("--max-games", "1000000"));
+const WINDOW = Number(arg("--window", "50"));
+const KEEP = Number(arg("--keep", "3"));
+const VALID = Number(arg("--valid", "0.05"));
+const IDLE = Number(arg("--idle", "0.1"));
+const MAX_CALLS = 8;
+
+// The tool list the seat sees, taken from the arena's own MCP server so the
+// training prompt renders the same tools block as inference. Generated once by
+// arena/local/tools.json (see sync-worktree.sh).
+const TOOLS = JSON.parse(fs.readFileSync(path.join(ROOT, "arena/local/tools.json"), "utf8")) as unknown[];
+
+type ToolCall = { name: string; arguments: Record<string, unknown> };
+type Example = { messages: unknown[]; tools: unknown[] };
+
+const UNIT_NAME = new Map<UnitType, BuildableUnit>(Object.entries(UNIT_MAP).map(([k, v]) => [v, k as BuildableUnit]));
+const NUKE_NAME: Partial<Record<UnitType, string>> = {
+  [UnitType.AtomBomb]: "Atom Bomb",
+  [UnitType.HydrogenBomb]: "Hydrogen Bomb",
+  [UnitType.MIRV]: "MIRV",
+};
+
+function ratioOf(troops: number | null | undefined, me: Player): number {
+  const total = me.troops();
+  if (troops === null || troops === undefined || total <= 0) return 0.3;
+  const r = Math.round((troops / total) * 100) / 100;
+  return Math.min(RATIO_MAX, Math.max(RATIO_MIN, r));
+}
+
+/** `at` for a build: the rival whose land is nearest the tile (within 15), else "sea" on a shore, else nothing. */
+function buildAt(game: Game, me: Player, tile: number): number | "sea" | undefined {
+  const x = game.x(tile);
+  const y = game.y(tile);
+  const counts = new Map<number, number>();
+  for (let dx = -15; dx <= 15; dx++) {
+    for (let dy = -15; dy <= 15; dy++) {
+      if (!game.isValidCoord(x + dx, y + dy)) continue;
+      const t = game.ref(x + dx, y + dy);
+      if (!game.hasOwner(t)) continue;
+      const o = game.ownerID(t);
+      if (o === me.smallID()) continue;
+      counts.set(o, (counts.get(o) ?? 0) + 1);
+    }
+  }
+  let best: number | undefined;
+  let bestN = 0;
+  for (const [id, n] of counts) if (n > bestN) [best, bestN] = [id, n];
+  if (best !== undefined) return best;
+  return game.isShore(tile) ? "sea" : undefined;
+}
+
+/** One human intent -> one tool call in our vocabulary, or null when we do not expose it. */
+function label(game: Game, me: Player, intent: Intent): ToolCall | null {
+  const small = (id: string): number | null => {
+    if (!game.hasPlayer(id)) return null;
+    return game.player(id).smallID();
+  };
+  switch (intent.type) {
+    case "attack": {
+      if (intent.targetID === null) return { name: "expand", arguments: { ratio: ratioOf(intent.troops, me) } };
+      const t = small(intent.targetID);
+      return t === null ? null : { name: "attack", arguments: { target: t, ratio: ratioOf(intent.troops, me) } };
+    }
+    case "boat": {
+      const owner = game.owner(intent.dst);
+      if (!owner.isPlayer()) return null;
+      return { name: "boat", arguments: { target: owner.smallID(), ratio: ratioOf(intent.troops, me) } };
+    }
+    case "build_unit": {
+      const nuke = NUKE_NAME[intent.unit];
+      if (nuke !== undefined) {
+        const owner = game.owner(intent.tile);
+        return owner.isPlayer() ? { name: "nuke", arguments: { target: owner.smallID(), nuke } } : null;
+      }
+      const unit = UNIT_NAME.get(intent.unit);
+      if (unit === undefined) return null;
+      const at = buildAt(game, me, intent.tile);
+      return { name: "build", arguments: at === undefined ? { unit } : { unit, at } };
+    }
+    case "upgrade_structure": {
+      const unit = UNIT_NAME.get(intent.unit);
+      return unit === undefined ? null : { name: "upgrade", arguments: { unit, id: intent.unitId } };
+    }
+    case "move_warship":
+      return { name: "move_warship", arguments: { id: intent.unitIds[0], x: game.x(intent.tile), y: game.y(intent.tile) } };
+    case "cancel_attack": {
+      const a = me.outgoingAttacks().find((x) => x.id() === intent.attackID);
+      const t = a?.target();
+      return { name: "retreat", arguments: t !== undefined && t.isPlayer() ? { target: t.smallID() } : {} };
+    }
+    case "cancel_boat":
+      return { name: "recall_boats", arguments: {} };
+    case "allianceRequest": {
+      const t = small(intent.recipient);
+      if (t === null) return null;
+      const pending = me.incomingAllianceRequests().some((r) => r.requestor().smallID() === t);
+      return { name: pending ? "accept_alliance" : "ally", arguments: { target: t } };
+    }
+    case "allianceReject": {
+      const t = small(intent.requestor);
+      return t === null ? null : { name: "reject_alliance", arguments: { target: t } };
+    }
+    case "breakAlliance": {
+      const t = small(intent.recipient);
+      return t === null ? null : { name: "break_alliance", arguments: { target: t } };
+    }
+    case "allianceExtension": {
+      const t = small(intent.recipient);
+      return t === null ? null : { name: "extend_alliance", arguments: { target: t } };
+    }
+    case "donate_troops": {
+      const t = small(intent.recipient);
+      return t === null || !intent.troops ? null : { name: "donate", arguments: { target: t, troops: Math.round(intent.troops) } };
+    }
+    case "donate_gold": {
+      const t = small(intent.recipient);
+      return t === null || !intent.gold ? null : { name: "donate", arguments: { target: t, gold: Math.round(intent.gold) } };
+    }
+    case "embargo": {
+      const t = small(intent.targetID);
+      return t === null ? null : { name: "embargo", arguments: intent.action === "stop" ? { target: t, stop: true } : { target: t } };
+    }
+    case "emoji": {
+      const emoji = flattenedEmojiTable[intent.emoji];
+      if (emoji === undefined) return null;
+      if (intent.recipient === "AllPlayers") return { name: "emoji", arguments: { emoji } };
+      const t = small(intent.recipient);
+      return t === null ? null : { name: "emoji", arguments: { emoji, target: t } };
+    }
+    case "quick_chat": {
+      const t = small(intent.recipient);
+      return t === null ? null : { name: "chat", arguments: { key: intent.quickChatKey, target: t } };
+    }
+    default:
+      return null; // spawn, targetPlayer, delete_unit, embargo_all, mark_disconnected, toggle_pause
+  }
+}
+
+function ctxFor(p: Player): PlayerCtx {
+  return {
+    model: "",
+    name: p.name(),
+    persona: "",
+    clientID: p.clientID() ?? "",
+    playerID: p.id(),
+    notes: "",
+    lastResult: "",
+    latencyEma: 0,
+    intervalTicks: 0,
+    pending: false,
+    consecutiveDrops: 0,
+  };
+}
+
+function example(obs: unknown, calls: ToolCall[]): Example {
+  const assistant =
+    calls.length === 0
+      ? { role: "assistant", content: "Holding." }
+      : {
+          role: "assistant",
+          content: "",
+          tool_calls: calls.map((c, i) => ({ id: `call_${i + 1}`, type: "function", function: { name: c.name, arguments: c.arguments } })),
+        };
+  return {
+    messages: [
+      { role: "system", content: localSystemPrompt("") },
+      { role: "user", content: JSON.stringify({ ...compactObs(obs as Record<string, unknown>), plan: "", lastResult: "" }) },
+      assistant,
+    ],
+    tools: TOOLS,
+  };
+}
+
+/** Humans worth cloning: the winner plus the top KEEP survivors by final tiles. */
+function keptClientIDs(record: GameRecord): Set<string> {
+  const info = record.info;
+  const keep = new Set<string>();
+  if (info.winner?.[0] === "player") keep.add(info.winner[1]);
+  const ranked = info.players
+    .filter((p) => p.stats?.killedAt === undefined)
+    .map((p) => ({ id: p.clientID, tiles: Number(p.stats?.finalTiles ?? 0) }))
+    .sort((a, b) => b.tiles - a.tiles);
+  for (const p of ranked.slice(0, KEEP)) if (p.tiles > 0) keep.add(p.id);
+  return keep;
+}
+
+async function replayRecord(file: string): Promise<{ examples: Example[]; synced: boolean; ticks: number }> {
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as GameRecord;
+  const record = decompressGameRecord(raw);
+  const info = record.info;
+  const gameStart: GameStartInfo = toWireGameStartInfo({
+    gameID: info.gameID,
+    lobbyCreatedAt: info.lobbyCreatedAt,
+    config: info.config,
+    players: info.players,
+    tribes: info.tribes,
+  });
+  const config = new Config(info.config, null, false);
+  const terrain = await loadTerrainMap(info.config.gameMap, info.config.gameMapSize, new NodeGameMapLoader(path.join(ROOT, "resources/maps")), false);
+  const random = new PseudoRandom(simpleHash(gameStart.gameID));
+  const humans = gameStart.players.map(
+    (p) => new PlayerInfo(p.username, PlayerType.Human, p.clientID, random.nextID(), p.isLobbyCreator ?? false, p.clanTag, p.friends ?? [], p.teamIndex ?? null),
+  );
+  const nations = createNationsForGame(gameStart, terrain.nations, terrain.additionalNations, humans.length, random);
+  const game = createGame(humans, nations, terrain.gameMap, terrain.miniGameMap, config, terrain.teamGameSpawnAreas);
+  const computed = new Map<number, number>();
+  let fatal: string | undefined;
+  const runner = new GameRunner(
+    game,
+    new Executor(game, gameStart.gameID, undefined, gameStart.tribes?.map((t) => t.name)),
+    (gu) => {
+      if ("errMsg" in gu) {
+        fatal = gu.errMsg;
+        return;
+      }
+      for (const hu of gu.updates[GameUpdateType.Hash] as HashUpdate[]) computed.set(hu.tick, hu.hash);
+    },
+  );
+  runner.init();
+
+  const keep = keptClientIDs(record);
+  const examples: Example[] = [];
+  const open = new Map<string, { until: number; obs: unknown; calls: ToolCall[] }>();
+  let synced = true;
+  for (const turn of record.turns) {
+    const tick = game.ticks();
+    if (tick % 100 === 0) trackHistory(game);
+    if (!game.inSpawnPhase()) {
+      // Close windows that ran out.
+      for (const [cid, w] of open) {
+        if (tick >= w.until) {
+          examples.push(example(w.obs, w.calls));
+          open.delete(cid);
+        }
+      }
+      // Human intents this tick, observed BEFORE they execute.
+      for (const intent of turn.intents) {
+        if (!keep.has(intent.clientID)) continue;
+        const me = game.playerByClientID(intent.clientID);
+        if (me === null || !me.isAlive()) continue;
+        let w = open.get(intent.clientID);
+        if (w === undefined) {
+          w = { until: tick + WINDOW, obs: observe(game, me, ctxFor(me), [], []), calls: [] };
+          open.set(intent.clientID, w);
+        }
+        const call = label(game, me, intent);
+        if (call !== null && w.calls.length < MAX_CALLS) w.calls.push(call);
+      }
+      // A few "nothing to do" rounds so the model learns to end a round.
+      if (tick % 300 === 0) {
+        for (const cid of keep) {
+          if (open.has(cid) || Math.random() > IDLE) continue;
+          const me = game.playerByClientID(cid);
+          if (me === null || !me.isAlive()) continue;
+          examples.push(example(observe(game, me, ctxFor(me), [], []), []));
+        }
+      }
+    }
+    runner.addTurn(turn);
+    if (!runner.executeNextTick()) {
+      console.warn(`${info.gameID}: tick failed at ${turn.turnNumber}: ${fatal}`);
+      synced = false;
+      break;
+    }
+    const c = computed.get(turn.turnNumber);
+    if (c !== undefined && turn.hash !== null && turn.hash !== undefined && c !== turn.hash) {
+      console.warn(`${info.gameID}: hash mismatch at turn ${turn.turnNumber}; keeping examples up to here`);
+      synced = false;
+      break;
+    }
+  }
+  for (const w of open.values()) examples.push(example(w.obs, w.calls));
+  return { examples: examples.filter((e) => (e.messages[2] as { tool_calls?: unknown[] }).tool_calls?.length !== 0), synced, ticks: game.ticks() };
+}
+
+async function main() {
+  console.debug = () => {};
+  fs.mkdirSync(outDir, { recursive: true });
+  const files = fs.readdirSync(recordsDir).filter((f) => f.endsWith(".json") && !f.includes(".seats")).slice(0, maxGames);
+  const train = fs.createWriteStream(path.join(outDir, "train.jsonl"));
+  const valid = fs.createWriteStream(path.join(outDir, "valid.jsonl"));
+  let nTrain = 0;
+  let nValid = 0;
+  let chars = 0;
+  const toolCounts = new Map<string, number>();
+  for (const [i, f] of files.entries()) {
+    const t0 = Date.now();
+    let res: Awaited<ReturnType<typeof replayRecord>>;
+    try {
+      res = await replayRecord(path.join(recordsDir, f));
+    } catch (err) {
+      console.warn(`${f}: ${String(err).slice(0, 200)}`);
+      continue;
+    }
+    const sink = Math.random() < VALID ? valid : train;
+    for (const e of res.examples) {
+      const line = JSON.stringify(e);
+      chars += line.length;
+      sink.write(line + "\n");
+      for (const tc of ((e.messages[2] as { tool_calls?: { function: { name: string } }[] }).tool_calls ?? [])) {
+        toolCounts.set(tc.function.name, (toolCounts.get(tc.function.name) ?? 0) + 1);
+      }
+    }
+    if (sink === valid) nValid += res.examples.length;
+    else nTrain += res.examples.length;
+    console.log(`${i + 1}/${files.length} ${f} ${res.synced ? "in sync" : "DIVERGED"} ticks=${res.ticks} examples=${res.examples.length} ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  }
+  train.end();
+  valid.end();
+  console.log(`train=${nTrain} valid=${nValid} ≈${Math.round(chars / 3.5 / 1000)}k tokens`);
+  console.log([...toolCounts].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}=${v}`).join(" "));
+}
+
+void main();
