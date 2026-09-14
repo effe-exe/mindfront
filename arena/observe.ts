@@ -70,17 +70,6 @@ export function hasFreeLandBorder(game: Game, p: Player): boolean {
   return false;
 }
 
-// Cheap coastal check: scan at most `cap` border tiles instead of the whole
-// border (borders can be thousands of tiles on a big blob).
-function hasCoast(game: Game, p: Player, cap = 300): boolean {
-  let i = 0;
-  for (const tile of p.borderTiles()) {
-    if (game.isShore(tile)) return true;
-    if (++i >= cap) break;
-  }
-  return false;
-}
-
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
@@ -142,9 +131,13 @@ function deltas(
 
 // ---------- water ----------
 
-/** Water bodies touching a player's shore border tiles (≤300 sampled across
- * the border) and whether any of them is ocean. Memoised on the border and
- * water versions: every player is asked on every observe. */
+/** Water bodies touching a player's shore border tiles (≤600 sampled at a
+ * stride across the border) and whether any of them is ocean (isOceanShore:
+ * a lake shore is not "coastal", but a shared lake is still a boat route, as
+ * the engine's closestReachableShore only asks for a shared component).
+ * Memoised on the border and water versions: every player is asked on every
+ * observe. ponytail: a huge inland border with a few shore tiles can be
+ * missed by the stride; scan fully if that ever shows up. */
 const shoreMemo = new Map<number, { tiles: number; water: number; ocean: boolean; comps: Set<number> }>();
 function shoreWater(game: Game, p: Player): { ocean: boolean; comps: Set<number> } {
   const tiles = p.tileChangeVersion();
@@ -152,7 +145,7 @@ function shoreWater(game: Game, p: Player): { ocean: boolean; comps: Set<number>
   const hit = shoreMemo.get(p.smallID());
   if (hit !== undefined && hit.tiles === tiles && hit.water === water) return hit;
   const border = p.borderTiles();
-  const stride = Math.max(1, Math.floor(border.size / 300));
+  const stride = Math.max(1, Math.floor(border.size / 600));
   let ocean = false;
   const comps = new Set<number>();
   let i = 0;
@@ -281,6 +274,7 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
   const tick = game.ticks();
   const mySmall = me.smallID();
   const myCenter = clusterBox(game, me).center;
+  const mySeas = shoreWater(game, me).comps;
   const incoming = new Set(
     me.incomingAttacks().map((a) => a.attacker().smallID()),
   );
@@ -331,7 +325,8 @@ function makeViewer(game: Game, me: Player): (p: Player) => ObsNeighbor {
       relation: p === me ? "neutral" : RELATION_NAMES[me.relation(p)],
       allied: me.isAlliedWith(p),
       attackingMe: incoming.has(id),
-      coastal: hasCoast(game, p),
+      coastal: shoreWater(game, p).ocean,
+      sharesSea: p !== me && [...shoreWater(game, p).comps].some((c) => mySeas.has(c)),
       gold: Number(p.gold()),
       maxTroops: Math.round(maxTroops),
       troopsPct: maxTroops > 0 ? Math.round((troops / maxTroops) * 100) : 0,
@@ -382,17 +377,13 @@ export function observe(
 
   const neighbors: ObsNeighbor[] = neighborPlayers.map(view);
 
-  const iAmCoastal = hasCoast(game, me);
-  const reachableByBoat = iAmCoastal
-    ? game
-        .players()
-        .filter(
-          (p) => p !== me && !neighborIds.has(p.smallID()) && hasCoast(game, p),
-        )
-        .map(view)
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, 6)
-    : [];
+  const reachableByBoat = game
+    .players()
+    .filter((p) => p !== me && !neighborIds.has(p.smallID()) && p.isAlive())
+    .map(view)
+    .filter((v) => v.sharesSea)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 10);
 
   // How much room is left to expand: distinct unclaimed land tiles touching my
   // border, exact up to 2,000 (whole border scanned: a prefix reads the oldest,
@@ -421,7 +412,7 @@ export function observe(
   const canBuild: { unit: BuildableUnit; cost: number }[] = [];
   const buildCosts = {} as Record<BuildableUnit, number>;
   const build = {} as Obs["build"];
-  const ownShore = hasCoast(game, me);
+  const ownShore = shoreWater(game, me).comps.size > 0;
   const partnerPorts = tradePartnerPorts(game, me);
   // Warships launch from a finished Port only (PlayerImpl.canBuildUnitType).
   const ports = me.units(UnitType.Port).filter((u) => !u.isUnderConstruction()).length;
@@ -638,6 +629,13 @@ function resolveTarget(game: Game, id: number | undefined): Player | undefined {
   return p;
 }
 
+/** Why canAttackPlayer(t) is false, and what to do instead. */
+function blockedReason(game: Game, me: Player, t: Player): string {
+  if (me.isAlliedWith(t)) return `${t.smallID()} is your ally; break_alliance first if you want to attack`;
+  const left = Math.max(1, Math.round(game.config().spawnImmunityDuration() - game.elapsedGameSeconds() * 10));
+  return `${t.smallID()} is under spawn immunity for ${left} more ticks (AI seats only; tribes are attackable now)`;
+}
+
 /** Result of translating one action: either an intent to send, or a drop reason. */
 type Translated = { intent: Intent } | { intents: Intent[] } | { reason: string };
 
@@ -673,11 +671,7 @@ function translate(game: Game, me: Player, action: Action): Translated {
           reason: `target ${action.target} does not share a border with you; attack a neighbor instead`,
         };
       }
-      if (!me.canAttackPlayer(t)) {
-        return {
-          reason: `cannot attack target ${action.target} right now (immune or otherwise blocked)`,
-        };
-      }
+      if (!me.canAttackPlayer(t)) return { reason: blockedReason(game, me, t) };
       const troops = Math.floor(me.troops() * clampRatio(action.ratio));
       if (troops <= 0) return { reason: "not enough troops to attack" };
       return { intent: { type: "attack", targetID: t.id(), troops } };
@@ -691,27 +685,35 @@ function translate(game: Game, me: Player, action: Action): Translated {
         };
       if (!t.isAlive())
         return { reason: `target ${action.target} is no longer alive` };
-      if (me.unitCount(UnitType.TransportShip) >= 3) {
-        return {
-          reason: "already have 3 boats in flight; wait for one to land",
-        };
+      if (t === me) return { reason: "you cannot boat yourself" };
+      if (!me.canAttackPlayer(t)) return { reason: blockedReason(game, me, t) };
+      const boats = me.units(UnitType.TransportShip);
+      if (boats.length >= game.config().boatMaxNumber()) {
+        const eta = Math.min(...boats.map((b) => (b.targetTile() === undefined ? 0 : game.manhattanDist(b.tile(), b.targetTile()!))));
+        return { reason: `already ${boats.length} boats at sea (the cap); the first lands in ~${eta} ticks` };
       }
-      let dst: TileRef | undefined;
-      let scanned = 0;
-      for (const tile of t.borderTiles()) {
-        if (game.isShore(tile)) {
-          dst = tile;
-          break;
-        }
-        if (++scanned >= 300) break;
+      // Landing tile: their shore tile on a water body my shore touches, nearest
+      // my centre (the engine's closestReachableShore takes it as is); the
+      // engine's own AI does the same with closestTwoTiles. Up to three
+      // candidates are checked for a water route.
+      const mySeas = shoreWater(game, me).comps;
+      const center = clusterBox(game, me).center;
+      const border = t.borderTiles();
+      const stride = Math.max(1, Math.floor(border.size / 300));
+      const candidates: TileRef[] = [];
+      let i = 0;
+      for (const tile of border) {
+        if (i++ % stride !== 0 || !game.isShore(tile)) continue;
+        const c = game.getWaterComponent(tile);
+        if (c !== null && mySeas.has(c)) candidates.push(tile);
       }
+      if (candidates.length === 0)
+        return { reason: `target ${action.target} has no shore on a water body you touch; pick an id whose sharesSea is true (reachableByBoat lists the nearest)` };
+      const away = (tile: TileRef) => Math.abs(game.x(tile) - center.x) + Math.abs(game.y(tile) - center.y);
+      candidates.sort((a, b) => away(a) - away(b));
+      const dst = candidates.slice(0, 3).find((tile) => me.bestTransportShipSpawn(tile) !== false);
       if (dst === undefined)
-        return { reason: `target ${action.target} has no reachable shore` };
-      if (me.bestTransportShipSpawn(dst) === false) {
-        return {
-          reason: `no sea route from your coast to target ${action.target}`,
-        };
-      }
+        return { reason: `no sea route from your coast to target ${action.target}; try another id in reachableByBoat` };
       const troops = Math.floor(me.troops() * clampRatio(action.ratio));
       if (troops <= 0) return { reason: "not enough troops to send by boat" };
       return { intent: { type: "boat", troops, dst } };

@@ -292,6 +292,49 @@ describe("arena/observe trade partners", () => {
   });
 });
 
+describe("arena/observe boats", () => {
+  test("sharesSea gates boat targets; the boat lands on the target's shore", async () => {
+    const g = await setup(
+      "half_land_half_ocean",
+      { infiniteGold: true, instantBuild: true, infiniteTroops: true },
+      [
+        playerInfo("player1", PlayerType.Human),
+        playerInfo("player2", PlayerType.Human),
+        playerInfo("player3", PlayerType.Human),
+      ],
+    );
+    const p1 = g.player("player1");
+    const p2 = g.player("player2");
+    const p3 = g.player("player3");
+    const coast =
+      [...Array(g.width()).keys()].find((x) => g.isWater(g.ref(x, 2)))! - 1;
+    for (let x = coast - 2; x <= coast; x++) p1.conquer(g.ref(x, 2));
+    for (let x = coast - 2; x <= coast; x++) p2.conquer(g.ref(x, 12));
+    for (let x = 1; x <= 3; x++) p3.conquer(g.ref(x, 7)); // inland
+    for (let i = 0; i < 2; i++) g.executeNextTick();
+
+    const obs = observe(g, p1, ctx(p1), []);
+    const v2 = obs.leaderboard.find((v) => v.id === p2.smallID())!;
+    const v3 = obs.leaderboard.find((v) => v.id === p3.smallID())!;
+    expect(v2.coastal).toBe(true);
+    expect(v2.sharesSea).toBe(true);
+    expect(v3.coastal).toBe(false);
+    expect(v3.sharesSea).toBe(false);
+    expect(obs.reachableByBoat.map((v) => v.id)).toEqual([p2.smallID()]);
+
+    const decide = (target: number) =>
+      toIntents(g, p1, obs, { reasoning: "", notes: "", actions: [{ type: "boat", target, ratio: 0.3 }] }, ctx(p1));
+    expect(decide(p3.smallID()).dropped[0].reason).toMatch(/no shore on a water body/);
+    const ok = decide(p2.smallID());
+    expect(ok.dropped).toEqual([]);
+    const intent = ok.intents[0] as { type: string; dst: number; troops: number };
+    expect(intent.type).toBe("boat");
+    expect(g.owner(intent.dst)).toBe(p2);
+    expect(g.isShore(intent.dst)).toBe(true);
+    expect(intent.troops).toBeGreaterThan(0);
+  });
+});
+
 describe("arena/observe build Warship", () => {
   test("translates build Warship into a build_unit intent on water near a Port", async () => {
     const g = await setup(

@@ -192,6 +192,12 @@ export const sanitize: Sanitize = (decision, obs) => {
   const dropped: { action: Action; reason: string }[] = [];
   const neighborIds = new Set(obs.neighbors.map((n) => n.id));
   const reachableIds = new Set(obs.reachableByBoat.map((r) => r.id));
+  // any visible player whose shore shares a water body with mine is a boat target
+  const seaIds = new Set(
+    [...obs.neighbors, ...obs.reachableByBoat, ...obs.leaderboard]
+      .filter((v) => v.sharesSea)
+      .map((v) => v.id),
+  );
   const pendingIds = new Set(obs.me.pendingAllianceRequestsFrom);
   const allyIds = new Set(obs.me.allies);
   const buildableUnits = new Set(obs.canBuild.map((c) => c.unit));
@@ -233,8 +239,8 @@ export const sanitize: Sanitize = (decision, obs) => {
         }
         break;
       case "boat":
-        if (action.target === undefined || !reachableIds.has(action.target)) {
-          reason = `target ${action.target} is not reachable by boat`;
+        if (action.target === undefined || !seaIds.has(action.target)) {
+          reason = `target ${action.target} shares no water body with your shore; boat targets: [${[...seaIds].join(",")}]`;
         }
         break;
       case "accept_alliance":
@@ -365,6 +371,7 @@ if (
     allied: false,
     attackingMe: false,
     coastal: true,
+    sharesSea: true,
     gold: 0,
     maxTroops: 1000,
     troopsPct: 10,

@@ -521,8 +521,12 @@ export function createArenaServer(opts: ArenaServerOpts): {
 
     action(
       "boat",
-      "Amphibious assault on a coastal player you do not border. Only ids from " +
-        `observe.reachableByBoat, at most 3 boats in flight at once. ratio: ${RATIO_DESC}`,
+      "Amphibious assault on any visible player whose sharesSea is true (observe.reachableByBoat " +
+        "lists the nearest 10 you do not border; a neighbour works too, for a landing behind their " +
+        "lines). No Port needed: it sails from your shore tile nearest by water and lands on their " +
+        "shore tile nearest your centre, takes that beach tile, then fights on as a land attack. " +
+        "1 HP: an enemy warship on the way sinks it with everyone aboard; recall_boats turns it back " +
+        `(25% lost). At most 3 boats at sea; not during their spawn immunity. ratio: ${RATIO_DESC}`,
       { target: z.number().int(), ratio: z.number().optional() },
       (a) => ({
         type: "boat",

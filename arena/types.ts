@@ -66,7 +66,10 @@ export interface ObsNeighbor {
   relation: Relation;
   allied: boolean;
   attackingMe: boolean;
+  /** owns a tile on an ocean shore (sampled) */
   coastal: boolean;
+  /** a water body my shore touches also touches theirs: a legal `boat` target */
+  sharesSea: boolean;
   gold: number;
   maxTroops: number;
   /** troops as a percentage of their cap */
@@ -172,7 +175,7 @@ export interface Obs {
   };
   neighbors: ObsNeighbor[];
   unclaimedLandAdjacent: boolean;
-  /** top 3 coastal non-neighbors, only if I own a shore tile */
+  /** ≤10 nearest non-neighbours whose shore shares a water body with mine; any visible id with `sharesSea` is a legal `boat` target too */
   reachableByBoat: ObsNeighbor[];
   /** top 5 by tiles, all players incl. me */
   leaderboard: ObsNeighbor[];
