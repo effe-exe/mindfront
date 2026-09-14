@@ -117,8 +117,10 @@ and a train pays gold at each City or Port it stops at — 35,000 at an ally's, 
 at your own, minus 5,000 per stop past the tenth, floored at 5,000 (`trainGold`) — to the train owner and the
 station owner alike. Upgrading costs the same as building the next one, with no level cap.
 
-Arena note: `build` picks the tile for you — your own land for most structures, border tiles for Port and
-Defense Post, and water next to one of your Ports for a Warship.
+Arena note: `build(unit, at?)` picks the tile for you. `at` says where: a player id puts the structure on
+the border facing that player (a Defense Post goes where it covers the most of that front within its
+30-tile range), `"sea"` puts it on your coast, and no `at` means any legal spot. Without `at`, posts end up
+wherever the scan finds room, which is rarely the border under pressure: always name the front.
 
 ## 7. Nuclear weapons
 

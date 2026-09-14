@@ -7,13 +7,13 @@ let game: Game;
 let player1: Player;
 let player2: Player;
 
-function ctx(): PlayerCtx {
+function ctx(forPlayer: Player = player1): PlayerCtx {
   return {
     model: "test/model",
     name: "Tester",
     persona: "",
     clientID: "client1",
-    playerID: player1.id(),
+    playerID: forPlayer.id(),
     notes: "",
     lastResult: "",
     latencyEma: 0,
@@ -234,7 +234,7 @@ describe("arena/observe build Warship", () => {
     for (let x = coast - 2; x <= coast; x++) p.conquer(g.ref(x, 10));
     p.buildUnit(UnitType.Port, g.ref(coast, 10), {});
 
-    const obs = observe(g, p, ctx(), []);
+    const obs = observe(g, p, ctx(p), []);
     expect(obs.canBuild.some((b) => b.unit === "Warship")).toBe(true);
     const result = toIntents(
       g,
@@ -245,7 +245,7 @@ describe("arena/observe build Warship", () => {
         notes: "",
         actions: [{ type: "build", unit: "Warship" }],
       },
-      ctx(),
+      ctx(p),
     );
     expect(result.dropped).toHaveLength(0);
     const intent = result.intents[0] as {

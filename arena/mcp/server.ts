@@ -566,9 +566,12 @@ export function createArenaServer(opts: ArenaServerOpts): {
         "Defense Post strengthens nearby borders; Factory builds rail and trains that " +
         "earn gold; SAM Launcher shoots incoming nukes down. See game_info for what " +
         "each one does and costs. Only units listed in observe.canBuild are affordable " +
-        "right now; observe.buildCosts shows every price so you can save up.",
-      { unit: z.enum(BUILDABLE_UNITS) },
-      (a) => ({ type: "build", unit: a.unit as Action["unit"] }),
+        "right now; observe.buildCosts shows every price so you can save up. " +
+        "at: WHERE to put it: a player id places it on the border facing that player " +
+        "(a Defense Post goes where it covers the most of that front, 30-tile range); " +
+        "\"sea\" places it on your coast; omit it to let the arena pick any legal spot.",
+      { unit: z.enum(BUILDABLE_UNITS), at: z.union([z.number().int(), z.literal("sea")]).optional() },
+      (a) => ({ type: "build", unit: a.unit as Action["unit"], at: a.at as Action["at"] }),
     );
 
     server.registerTool(

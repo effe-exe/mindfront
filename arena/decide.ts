@@ -253,6 +253,8 @@ export const sanitize: Sanitize = (decision, obs) => {
             action.unit === undefined
               ? "build needs a unit"
               : `${action.unit}: ${obs.build?.[action.unit]?.note ?? "cannot afford / not buildable now"}`;
+        } else if (typeof action.at === "number" && !knownIds.has(action.at)) {
+          reason = `at=${action.at} is not a visible player id`;
         }
         break;
       case "emoji":

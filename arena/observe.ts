@@ -635,13 +635,54 @@ function translate(game: Game, me: Player, action: Action): Translated {
       // territory sit around the spawn where structures already crowd each other.
       const n = "size" in pool ? pool.size : pool.length;
       const stride = Math.max(1, Math.floor(n / 200));
+      // Placement target: `at` = a player id (the border facing them) or "sea"
+      // (own coast). A Defense Post covers 30 tiles (defensePostRange), so the
+      // best tile is the one with the most of that front within range; other
+      // structures go to the candidate nearest that front.
+      const facing = action.at === undefined ? undefined : action.at === "sea" ? null : resolveTarget(game, action.at);
+      if (action.at !== undefined && action.at !== "sea" && facing === undefined)
+        return { reason: `at=${action.at} is not a visible player id` };
+      const frontTiles: TileRef[] = [];
+      if (facing !== undefined) {
+        let scanned = 0;
+        for (const b of me.borderTiles()) {
+          for (const nb of game.neighbors(b)) {
+            if (facing === null ? game.isWater(nb) : game.owner(nb) === facing) {
+              frontTiles.push(b);
+              break;
+            }
+          }
+          if (++scanned >= 3000) break;
+        }
+        if (frontTiles.length === 0)
+          return { reason: facing === null ? "you own no coastal tile" : `you share no border with ${action.at}` };
+      }
+      const range = unitType === UnitType.DefensePost ? game.config().defensePostRange() : 0;
+      const score = (t: TileRef): number => {
+        if (frontTiles.length === 0) return 0;
+        if (range > 0) {
+          let covered = 0;
+          for (const f of frontTiles) if (game.manhattanDist(t, f) <= range) covered++;
+          return covered;
+        }
+        let best = Infinity;
+        for (const f of frontTiles) best = Math.min(best, game.manhattanDist(t, f));
+        return -best;
+      };
       let tile: TileRef | undefined;
+      let bestScore = -Infinity;
       let i = 0;
       for (const t of pool) {
         if (i++ % stride !== 0) continue;
-        if (me.canBuild(unitType, t) !== false) {
+        if (me.canBuild(unitType, t) === false) continue;
+        if (frontTiles.length === 0) {
           tile = t;
           break;
+        }
+        const sc = score(t);
+        if (sc > bestScore) {
+          bestScore = sc;
+          tile = t;
         }
       }
       if (tile === undefined)

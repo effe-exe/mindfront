@@ -217,6 +217,8 @@ export const ActionSchema = z
     key: z.string().optional(),
     /** which warhead to launch (nuke); needs a Missile Silo and the gold */
     nuke: z.enum(NUKE_TYPES).optional(),
+    /** build placement: a player id = on the border facing them; "sea" = on your coast; omitted = wherever fits */
+    at: z.union([z.number().int(), z.literal("sea")]).optional(),
   })
   .strict();
 export type Action = z.infer<typeof ActionSchema>;
@@ -253,6 +255,7 @@ export const ACT_TOOL_PARAMETERS = {
           emoji: { type: "string" },
           key: { type: "string" },
           nuke: { enum: [...NUKE_TYPES] },
+          at: { oneOf: [{ type: "integer" }, { enum: ["sea"] }] },
         },
       },
     },
