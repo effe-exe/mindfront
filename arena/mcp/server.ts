@@ -561,6 +561,15 @@ export function createArenaServer(opts: ArenaServerOpts): {
     );
 
     action(
+      "extend_alliance",
+      "Ask an ally to renew: when both sides have called this, the alliance resets to a full " +
+        "5 minutes from that moment (no time window; tribes always agree within ~8 s). Best in the " +
+        "last 300 ticks; observe.me.allianceExpiry shows who has already asked. Only ids in observe.me.allies.",
+      { target: z.number().int() },
+      (a) => ({ type: "extend_alliance", target: a.target as number }),
+    );
+
+    action(
       "build",
       "Build a structure with gold. City raises your troop cap; Port earns trade gold; " +
         "Defense Post strengthens nearby borders; Factory builds rail and trains that " +

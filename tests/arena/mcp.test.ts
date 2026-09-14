@@ -114,6 +114,7 @@ describe("arena/mcp", () => {
       "accept_alliance",
       "reject_alliance",
       "break_alliance",
+      "extend_alliance",
       "build",
       "emoji",
       "chat",
@@ -183,6 +184,22 @@ describe("arena/mcp", () => {
     const r = await call("build", { unit: "City" });
     expect(r.ok).toBe(false);
     expect(sent).toHaveLength(0);
+  });
+
+  test("extend_alliance sends the extension intent only to an ally", async () => {
+    let r = await call("extend_alliance", { target: player2.smallID() });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/not your ally/);
+    player1.createAllianceRequest(player2)?.accept();
+    const obs = await call("observe");
+    expect(obs.me.allianceExpiry[0]).toMatchObject({
+      id: player2.smallID(),
+      theyAgreedToExtend: false,
+      iAgreedToExtend: false,
+    });
+    r = await call("extend_alliance", { target: player2.smallID() });
+    expect(r).toEqual({ ok: true });
+    expect(sent[0]).toEqual({ type: "allianceExtension", recipient: player2.id() });
   });
 
   test("say emits a tool event line", async () => {

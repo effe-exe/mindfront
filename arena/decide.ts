@@ -243,6 +243,7 @@ export const sanitize: Sanitize = (decision, obs) => {
         }
         break;
       case "break_alliance":
+      case "extend_alliance":
         if (action.target === undefined || !allyIds.has(action.target)) {
           reason = `target ${action.target} is not your ally`;
         }
@@ -398,7 +399,7 @@ if (
       immuneUntilTick: 0,
       isTraitor: false,
       betrayals: 0,
-      allianceExpiry: [{ id: 7, ticksLeft: 1000 }],
+      allianceExpiry: [{ id: 7, ticksLeft: 1000, theyAgreedToExtend: false, iAgreedToExtend: false }],
       pendingRequestExpiry: [{ id: 3, ticksLeft: 100 }],
       structures: { ...NO_STRUCTURES, City: 1 },
       center: { x: 100, y: 100 },
@@ -510,6 +511,14 @@ if (
       0,
       "accept_alliance on non-pending should be dropped",
     );
+  }
+  {
+    const { decision } = sanitize(
+      mk([{ type: "extend_alliance", target: 3 }, { type: "extend_alliance", target: 7 }]),
+      CANNED_OBS,
+    );
+    assert.equal(decision.actions.length, 1, "extend_alliance only on an ally");
+    assert.equal(decision.actions[0].target, 7);
   }
   {
     const { decision, dropped } = sanitize(

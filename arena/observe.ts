@@ -406,7 +406,16 @@ export function observe(
   }
   for (const al of me.alliances()) {
     const left = al.expiresAt() - game.ticks();
-    if (left <= 300) alerts.push(`ALLIANCE with ${al.other(me).name()} (id ${al.other(me).smallID()}) expires in ${Math.max(0, left)} ticks: that border reopens both ways.`);
+    const other = al.other(me);
+    if (left <= 300)
+      alerts.push(
+        `ALLIANCE with ${other.name()} (id ${other.smallID()}) expires in ${Math.max(0, left)} ticks: that border reopens both ways. ` +
+          (al.agreedToExtend(me)
+            ? `You asked to renew; waiting for them.`
+            : al.agreedToExtend(other)
+              ? `They asked to renew: extend_alliance(${other.smallID()}) seals 5 more minutes.`
+              : `extend_alliance(${other.smallID()}) to renew (both must ask; tribes always agree).`),
+      );
   }
   const unclaimedLandAdjacent = hasFreeLandBorder(game, me);
   if (!unclaimedLandAdjacent && freeLandAtBorder === 0)
@@ -471,6 +480,8 @@ export function observe(
       allianceExpiry: me.alliances().map((a) => ({
         id: a.other(me).smallID(),
         ticksLeft: a.expiresAt() - tick,
+        theyAgreedToExtend: a.agreedToExtend(a.other(me)),
+        iAgreedToExtend: a.agreedToExtend(me),
       })),
       pendingRequestExpiry: me.incomingAllianceRequests().map((r) => ({
         id: r.requestor().smallID(),
@@ -628,6 +639,19 @@ function translate(game: Game, me: Player, action: Action): Translated {
       if (!me.isAlliedWith(t))
         return { reason: `you are not allied with ${action.target}` };
       return { intent: { type: "breakAlliance", recipient: t.id() } };
+    }
+
+    case "extend_alliance": {
+      // AllianceExtensionExecution: each side flags its intent; when both have,
+      // expiry resets to now + allianceDuration. No time window is enforced.
+      const t = resolveTarget(game, action.target);
+      if (!t) return { reason: `target ${action.target} does not exist` };
+      const al = me.allianceWith(t);
+      if (al === null)
+        return { reason: `you are not allied with ${action.target}; ally(${action.target}) first` };
+      if (al.agreedToExtend(me))
+        return { reason: `you already asked ${action.target} to renew; it renews when they call extend_alliance too` };
+      return { intent: { type: "allianceExtension", recipient: t.id() } };
     }
 
     case "build": {

@@ -72,7 +72,7 @@ A blast covering ≥100 weighted tiles (inner 1, outer 0.5) of an ally's land or
 ## 7. Diplomacy
 
 - `relation`: my ledger of their acts toward me, −100..100: attack −60, alliance break −100 (−40 with everyone else bordering the breaker), nuke −100, alliance +100; decays 0.05/tick to 0; labels hostile < −50, distrustful < 0, neutral < 50, else friendly. No mechanical effect; tribes ignore it.
-- `ally(target)`: offer to any visible id, expires after 200 ticks (`allianceRequestDuration`); 300-tick cooldown before re-asking (`allianceRequestCooldown`); `accept_alliance` sends the offer back. Lasts 3,000 ticks = 5 min (`allianceDuration`), expires silently, no extension tool. Allied: attacks blocked both ways (one in flight retreats, no malus), temporary embargoes lifted, trains pay the ally rate; no shared vision or income.
+- `ally(target)`: offer to any visible id, expires after 200 ticks (`allianceRequestDuration`); 300-tick cooldown before re-asking (`allianceRequestCooldown`); `accept_alliance` sends the offer back. Lasts 3,000 ticks = 5 min (`allianceDuration`), expires silently. `extend_alliance(target)`: once BOTH sides have called it, expiry resets to now + 3,000 (`AllianceExtensionExecution`; no time window, the remaining time is not added, so renew in the last 300 ticks); a tribe answers within its next act tick (40–80 ticks); `me.allianceExpiry[].theyAgreedToExtend` = they already asked, `iAgreedToExtend` = you did. Allied: attacks blocked both ways (one in flight retreats, no malus), temporary embargoes lifted, trains pay the ally rate; no shared vision or income.
 - `break_alliance`: traitor 300 ticks (`traitorDuration`), `betrayals` +1 forever; no mark if the other side is already a traitor. Traitor: §3 multipliers against me; each bordering tribe attacks me at 1-in-3 odds per attack tick (1-in-6 if allied, breaking it).
 - Tribes (`kind: "tribe"`, 120 bots): act every 40–80 ticks; accept every alliance and extension request; never build (they delete structures they capture); expand while free land borders them; retaliate FIRST against their largest non-allied attacker regardless of troops; hunt a bordering traitor with 1/3 odds and break their own alliance with an allied traitor with 1/6 odds; otherwise attack only at ≥50–60% of cap, sending everything above a 30–40% reserve, skipping AI neighbours half the time; can boat. Weak on paper: cap ÷3, regen ×0.5, attacker losses ×0.7 against them. Conquered → all their gold (50/tick ≈ 30k per minute alive).
 - Embargoes, donations, target calls: no tool.
@@ -95,6 +95,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `ally` | `target` | visible id, not allied, no pending offer, cooldown passed | offer, or accept theirs | not visible; already allied; cannot send now |
 | `accept_alliance`, `reject_alliance` | `target` | id in `pendingAllianceRequestsFrom` | alliance / rejection | no pending request |
 | `break_alliance` | `target` | id in `me.allies` | §7 | not your ally |
+| `extend_alliance` | `target` | id in `me.allies`, not yet asked by me | renew flag; both flags → +5 min from now (§7) | not your ally; already asked |
 | `build` | `unit`, `at?` | unit in `canBuild`; `at` visible id or `"sea"` | new structure (§5) | `build[unit].note`; no spot 15 from others; no border with `at`; no coast |
 | `retreat` | `target?` | a running attack (none = all, expands too) | survivors home, −25% vs a player, 0% vs unclaimed | no attack running |
 | `nuke` | `target`, `nuke` | `nukes.silos` > 0, `nuke` in `nukes.affordable`, not allied | §6 | no silo; unaffordable; allied; no ready silo or immunity; target owns no land |
@@ -104,14 +105,14 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 
 | Field | Meaning | Decision |
 | --- | --- | --- |
-| `alerts[]` | UNDER ATTACK (who, troops, % of my army); ALLIANCE REQUEST; ALLIANCE expiring ≤300 ticks; NO FREE LAND; TROOPS ≥85% OF CAP | handle first |
+| `alerts[]` | UNDER ATTACK (who, troops, % of my army); ALLIANCE REQUEST; ALLIANCE expiring ≤300 ticks (who asked to renew); NO FREE LAND; TROOPS ≥85% OF CAP | handle first |
 | `tick`, `minute`, `game.tick`, `game.minutesLeft`, `game.totalLandTiles`, `game.mapWidth`, `game.mapHeight` | clock (`minutesLeft` null = untimed); win denominator pre-fallout; map extent | endgame (§0.1); scale for `landPct`, `center`, `bbox` |
 | `me.id`, `me.name`, `me.center{x,y}`, `me.bbox{minX,minY,maxX,maxY}` | my id (`me` on `map_overview`); centre and box of my largest cluster | never a target; with `direction`/`distance`, who is where |
 | `me.tiles`, `me.landPct`, `me.tilesDelta1m` | land; % of all; net tiles last minute | stalled → new target or route |
 | `me.freeLandAtBorder`, `unclaimedLandAdjacent` | distinct free tiles at my border (600 border tiles sampled); `expand` legal | ≈0 / false → boat or attack |
 | `me.troops`, `me.maxTroops`, `me.troopsPct`, `me.gold`, `me.goldIncomePerMin` | army, cap (§2), throttle; treasury; gold last minute, all sources | high pct → spend or City; what to buy; is trade/rail paying |
 | `me.cities`, `me.ports`, `me.defensePosts`, `me.silos`, `me.structures`, `me.boatsInFlight` | counts (`structures` = all 7 types); transports at sea, max 3 | next price on each ladder; can `boat` |
-| `me.allies`, `me.allianceExpiry[{id,ticksLeft}]`, `me.pendingAllianceRequestsFrom`, `me.pendingRequestExpiry[{id,ticksLeft}]` | allies and ticks until each expires; offers awaiting me and ticks until they lapse | which border is frozen, how long; accept / reject |
+| `me.allies`, `me.allianceExpiry[{id,ticksLeft,theyAgreedToExtend,iAgreedToExtend}]`, `me.pendingAllianceRequestsFrom`, `me.pendingRequestExpiry[{id,ticksLeft}]` | allies; ticks until each expires and who has asked to renew; offers awaiting me and ticks until they lapse | which border is frozen, how long; `extend_alliance` when `ticksLeft` ≤ 300 or they asked; accept / reject |
 | `me.incomingAttacks[{from,troops}]`, `me.outgoingAttacks[{to,troops,troopsRemaining}]` | attacks on me, current stacks; my running attacks (`to` = id or `"land"`; both troop fields = current stack) | reserve, counter-cancel (§3), Defense Post `at`=from; no re-send, `retreat` |
 | `me.immuneUntilTick`, `me.isTraitor`, `me.betrayals` | tick immunity ends (0 = over); traitor now; lifetime count | AI attacks wait; tribe and cheap attacks while traitor |
 | `neighbors[]`, `reachableByBoat[]`, `leaderboard[]` | land-border players; ≤6 coastal non-neighbours nearest first (only if I own shore); top 5 by tiles incl. me and tribes | `attack` ids; `boat` ids; who wins on timer |

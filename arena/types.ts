@@ -139,7 +139,13 @@ export interface Obs {
     immuneUntilTick: number;
     isTraitor: boolean;
     betrayals: number;
-    allianceExpiry: { id: number; ticksLeft: number }[];
+    /** per alliance: ticks until it lapses and who has already asked to renew (both must call `extend_alliance`) */
+    allianceExpiry: {
+      id: number;
+      ticksLeft: number;
+      theyAgreedToExtend: boolean;
+      iAgreedToExtend: boolean;
+    }[];
     pendingRequestExpiry: { id: number; ticksLeft: number }[];
     structures: Record<BuildableUnit, number>;
     center: { x: number; y: number };
@@ -191,6 +197,7 @@ export const ACTION_TYPES = [
   "accept_alliance",
   "reject_alliance",
   "break_alliance",
+  "extend_alliance",
   "build",
   "emoji",
   "chat",
