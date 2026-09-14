@@ -302,7 +302,8 @@ export function createArenaServer(opts: ArenaServerOpts): {
         ticksLeft: game.config().numSpawnPhaseTurns() - game.ticks(),
         howTo:
           `Call spawn(col,row) with a cell of the ${SPAWN_COLS}x${SPAWN_ROWS} grid below (c0..c${SPAWN_COLS - 1} west to east, ` +
-          `r0..r${SPAWN_ROWS - 1} north to south). You may re-pick until ticksLeft reaches 0; if you never pick, ` +
+          `r0..r${SPAWN_ROWS - 1} north to south). Call it NOW, before any analysis text: a model round can take ` +
+          "20-30 s of the window. You may re-pick until ticksLeft reaches 0; if you never pick, " +
           "you are placed automatically. Others' picks are listed as they happen.",
         myPick: me.numTilesOwned() > 0 ? cellOf(me) : null,
         picks,

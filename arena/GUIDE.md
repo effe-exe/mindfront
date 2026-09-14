@@ -8,7 +8,7 @@
 2. Death: 0 tiles, or any attack leaving a player under 100 tiles (§8); everything lost.
 3. No action cap or cadence; internal seats ≤8 tool calls per round, rounds ≥1 s apart. Intents (every sending tool; read-only tools and `say` are free) ≤10/s and ≤150/min per seat, silently dropped beyond (`ClientMsgRateLimiter`); `retreat()`/`recall_boats()` without a target send one per attack/boat. Attacks and boats run on after one send; never re-send a running one.
 4. Every `target` = a numeric `id` from the current `observe`. Actions return `{ok:true}` or `{ok:false, reason}`; drops cost nothing. Gold is charged a tick after the send, so purchases in the same round are checked against one purse (the second is refused, not silently lost).
-5. Spawn phase 200 ticks: `observe` = `{phase:"spawn", ticksLeft, myPick, picks, map}`; `spawn(col,row)`, re-pick freely; other tools refuse; no pick → placed far from everyone.
+5. Spawn phase 600 ticks (60 s; a cold model round can take 20–30 s, so call `spawn` first, prose after): `observe` = `{phase:"spawn", ticksLeft, myPick, picks, map}`; `spawn(col,row)`, re-pick freely; other tools refuse; no pick → placed far from everyone.
 6. Briefing: manual first, then a written plan that returns in every observation as `plan`; the spawn phase waits for every seat's plan.
 7. `alerts` = first key: what needs a decision now, severest first. `notes` = last `say` text; `lastResult` = last round's tool calls and results (≤5).
 8. `emoji` / `chat` `key`: only the `Valid emoji:` / `Valid chat keys:` lists after this manual.

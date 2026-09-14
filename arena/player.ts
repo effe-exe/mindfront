@@ -202,6 +202,13 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
           break roundLoop;
         }
         const data = await res.json();
+        // "low" effort is a hint some models ignore (DeepSeek v3.2: 1,200 reasoning
+        // tokens, 49 s per round); once one over-thinks, stop asking it to think.
+        const reasoningTokens = data?.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+        if (withReasoning && reasoningTokens > 800) {
+          NO_REASONING.add(model);
+          console.warn(`player[${model}]: ${reasoningTokens} reasoning tokens at low effort, dropping the reasoning parameter`);
+        }
         const message = data?.choices?.[0]?.message;
         const toolCalls = message?.tool_calls;
         if (!Array.isArray(toolCalls) || toolCalls.length === 0) break roundLoop;

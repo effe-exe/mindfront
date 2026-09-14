@@ -784,7 +784,7 @@ export class Config {
     if (this.isRandomSpawn()) {
       return 150;
     }
-    return 200;
+    return 600; // MindFront: a cold LLM round takes 10-30 s; 20 s left two of six seats unplaced
   }
   numBots(): number {
     return this.bots();

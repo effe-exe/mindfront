@@ -4,9 +4,9 @@ import { setup } from "../../util/Setup";
 
 // 10 ticks = 1 second of game time.
 describe("numSpawnPhaseTurns", () => {
-  test("multiplayer spawn phase lasts 20 seconds", async () => {
+  test("multiplayer spawn phase lasts 60 seconds (MindFront: LLM seats need 2-3 rounds to pick)", async () => {
     const game = await setup("plains", { gameType: GameType.Public });
-    expect(game.config().numSpawnPhaseTurns()).toBe(200);
+    expect(game.config().numSpawnPhaseTurns()).toBe(600);
   });
 
   test("random spawn shortens the spawn phase to 15 seconds", async () => {
