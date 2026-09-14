@@ -59,7 +59,7 @@ n = already built of that type, upgrades included. Gold charged at start, never 
 
 ## 6. Nukes
 
-`nuke(target, nuke)`: nearest ready silo fires at the target's tile nearest the middle of their land; refused when the outer radius would cover any tile of mine (the blast strips tiles and deletes units of EVERY owner inside it, mine included) or break an alliance; no range limit; blocked during spawn immunity; flight 10 tiles/tick. Inner radius destroyed, outer ring 50% per tile, all units inside the outer radius deleted. Troops killed per impacted tile `5 × troops / tilesLeft` (`nukeDeathFactor`) from stock, running attacks and boats; MIRV warheads instead crush troops toward 3% of cap. Destroyed land = fallout until conquered: §3 multiplier, out of the win denominator.
+`nuke(target, nuke)`: nearest ready silo fires at the aim point on the target's land that deletes the most of their structures (Cities = their cap, Silos, SAMs, Ports) and strips the most tiles, else the middle of their land; refused when the outer radius would cover any tile of mine (the blast strips tiles and deletes units of EVERY owner inside it, mine included) or break an alliance; no range limit; blocked during spawn immunity; flight 10 tiles/tick. Inner radius destroyed, outer ring 50% per tile, all units inside the outer radius deleted. Troops killed per impacted tile `5 × troops / tilesLeft` (`nukeDeathFactor`) from stock, running attacks and boats; MIRV warheads instead crush troops toward 3% of cap. Destroyed land = fallout until conquered: §3 multiplier, out of the win denominator.
 
 | Warhead | Gold | Radius in/out |
 | --- | --- | --- |
@@ -68,6 +68,8 @@ n = already built of that type, upgrades included. Gold charged at start, never 
 | MIRV | 25,000,000 + 15,000,000 × launched | 350 warheads × 12 / 18; needs an owned target tile; SAMs never hit the carrier |
 
 A blast covering ≥100 weighted tiles (inner 1, outer 0.5) of an ally's land or any of their structures breaks the alliance (traitor mark, relation −100); a MIRV at an ally breaks it unconditionally; a new alliance deletes nukes in flight between the two.
+
+Defence: only a SAM Launcher stops a warhead, with certainty, when the impact tile is within its range (70 tiles at level 1, `samRange`; 300 ticks to build, so buy it before the second bomb, next to the Cities and Silos it must cover); Defense Posts, troops and alliances with third parties do nothing against a nuke. `alerts` carries `NUKED` for 90 s after any launch at me.
 
 ## 7. Diplomacy
 
@@ -109,7 +111,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 
 | Field | Meaning | Decision |
 | --- | --- | --- |
-| `alerts[]` | UNDER ATTACK (who, troops, % of my army); BOAT INCOMING (who, troops, ticks out); ALLIANCE REQUEST; ALLIANCE expiring ≤300 ticks (who asked to renew); NO FREE LAND; TROOPS ≥85% OF CAP | handle first |
+| `alerts[]` | NUKED (warheads launched at me in the last 90 s, by whom, my SAM cover); UNDER ATTACK (who, troops, % of my army); BOAT INCOMING (who, troops, ticks out); ALLIANCE REQUEST; ALLIANCE expiring ≤300 ticks (who asked to renew); NO FREE LAND; TROOPS ≥85% OF CAP | handle first |
 | `tick`, `minute`, `game.tick`, `game.minutesLeft`, `game.totalLandTiles`, `game.mapWidth`, `game.mapHeight` | clock (`minutesLeft` null = untimed); win denominator pre-fallout; map extent | endgame (§0.1); scale for `landPct`, `center`, `bbox` |
 | `me.id`, `me.name`, `me.center{x,y}`, `me.bbox{minX,minY,maxX,maxY}` | my id (`me` on `map_overview`); centre and box of my largest cluster | never a target; with `direction`/`distance`, who is where |
 | `me.tiles`, `me.landPct`, `me.tilesDelta1m` | land; % of all; net tiles last minute | stalled → new target or route |
@@ -134,7 +136,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 1. Spawn: free land in more than one direction, coast plus interior; reject cells whose only exit is water or another's pick.
 2. IF `unclaimedLandAdjacent` and `freeLandAtBorder` > ~50: `expand` (ratio 0.3–0.5); ≥6,600 troops saturates plains speed.
 3. IF `troopsPct` ≥ 80: spend (expand/attack/boat) or `build City` (`upgrade("City")` when no tile is 15 from my other structures: same price, same +250k).
-4. IF `gold` covers the bottleneck: City when the cap throttles; Port early on a coast where `aiOnMySea` > 0 (trade pays both sides ≈ 400k/min at 300 tiles, §4; `at:"sea"`; never for boats, they need only a shore tile); Warship (needs a Port) when boats land on me or a rival's Port is within ~130 tiles: it sinks transports in one shell and captures their trade ships for the whole payout; Defense Post `at` = the pressing neighbour; Factory once a City/Port stands within 110 tiles; SAM only when a rival's `structures["Missile Silo"]` > 0. Idle gold earns nothing; Port and Factory share one price ladder, so either doubles the next of both.
+4. IF `gold` covers the bottleneck: City when the cap throttles; Port early on a coast where `aiOnMySea` > 0 (trade pays both sides ≈ 400k/min at 300 tiles, §4; `at:"sea"`; never for boats, they need only a shore tile); Warship (needs a Port) when boats land on me or a rival's Port is within ~130 tiles: it sinks transports in one shell and captures their trade ships for the whole payout; Defense Post `at` = the pressing neighbour; Factory once a City/Port stands within 110 tiles; SAM Launcher (1.5M) as soon as a rival owns a Silo or a warhead has hit me, covering my Cities and Silos (the only counter, §6); Missile Silo (1M) once income allows: a 750k Atom Bomb deletes every structure in a 30-tile radius and the arena aims it at their densest structure cluster, so it removes a rival's cap, silos and SAMs, not just land. Idle gold earns nothing; Port and Factory share one price ladder, so either doubles the next of both.
 5. IF `freeLandAtBorder` ≈ 0: target by §3: lowest `troops/tiles`, widest `sharedBorderTiles`, non-empty `attackedBy`, no Defense Posts, `tilesDelta1m` < 0; stack ≥ 1.7 × their troops (D/A ≤ 0.6).
 6. IF `reachableByBoat` has a tribe with high `gold` and low `troops/tiles`: `boat` with troops above their army, then `expand` from the beachhead. A nation is a slower AI with half the cap: ally it early (it accepts 90% in the first 5 min and never betrays me), trade with its Port, take it late for all its gold.
 7. IF `incomingAttacks` or `incomingBoats` non-empty: keep ≥1/3 of troops home; counter-cancel (§3) when my stack matches theirs; `retreat` elsewhere first.

@@ -77,7 +77,7 @@ const UNIT_EFFECTS: Record<BuildableUnit, string> = {
   "Missile Silo":
     "Lets you launch nukes with the nuke tool; one missile per silo on a 90 tick cooldown.",
   "SAM Launcher":
-    "Shoots down incoming nukes within 70 tiles at level 1. 90 tick cooldown.",
+    "The only thing that stops a warhead: intercepts, with certainty, every Atom/Hydrogen bomb whose impact point is within 70 tiles of it (level 1; more per level), 90-tick reload, 300 ticks to build. Put it next to the Cities and Silos it must cover. Defense Posts do nothing against nukes.",
   Factory:
     "No direct gold: it builds the rail network, and trains from it pay gold at every City or Port they stop at.",
   Warship:
@@ -729,8 +729,9 @@ export function createArenaServer(opts: ArenaServerOpts): {
 
     action(
       "nuke",
-      "Launch a warhead from one of your Missile Silos at a player's territory (the arena aims " +
-        "at the middle of their land). Atom Bomb 750k gold (12/30-tile radius), Hydrogen Bomb 5M " +
+      "Launch a warhead from one of your Missile Silos at a player's territory. The arena aims at " +
+        "the point on their land that deletes the most of their structures (Cities, Silos, SAMs, Ports) " +
+        "and strips the most tiles, else the middle of their land. Atom Bomb 750k gold (12/30-tile radius), Hydrogen Bomb 5M " +
         "(80/100), MIRV 25M+ (350 warheads over their land). Destroys land into permanent fallout, " +
         "kills troops in the blast, deletes EVERY owner's structures inside the outer radius (yours " +
         "too), and breaks any alliance whose land or structures it hits; enemy SAM Launchers within " +

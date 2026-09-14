@@ -93,6 +93,14 @@ interface Sample {
   tradeGold: number;
   trainGold: number;
 }
+/** warheads launched at a seat, by victim smallID; fed by the brain from UnitIncoming */
+const nukeLaunches = new Map<number, { tick: number; from: number; kind: string }[]>();
+export function recordNukeLaunch(victim: number, from: number, kind: string, tick: number): void {
+  const arr = nukeLaunches.get(victim) ?? [];
+  arr.push({ tick, from, kind });
+  nukeLaunches.set(victim, arr.slice(-10));
+}
+
 /** smallID -> last ~7 samples. Module-level: one sim per process. */
 const history = new Map<number, Sample[]>();
 const HISTORY_LEN = 7;
@@ -517,6 +525,22 @@ export function observe(
     alerts.push(
       `BOAT INCOMING from ${from.isPlayer() ? from.name() : "?"} (id ${b.from}, ${b.troops} troops), ~${b.tilesAway} ticks out: it takes the beach tile on landing, then attacks from there. ` +
         "Keep troops home, or build(Defense Post, at:\"sea\") on that coast.",
+    );
+  }
+  // Warheads launched at me in the last 90 s: the one threat a Defense Post
+  // does nothing about (Gemini Flash took 4 bombs while building 20 posts).
+  const recentNukes = (nukeLaunches.get(me.smallID()) ?? []).filter((n) => tick - n.tick <= 900);
+  if (recentNukes.length > 0) {
+    const byFrom = new Map<number, number>();
+    for (const n of recentNukes) byFrom.set(n.from, (byFrom.get(n.from) ?? 0) + 1);
+    const who = [...byFrom].map(([id, k]) => { const p = game.playerBySmallID(id) as Player | undefined; return `${p?.isPlayer() ? p.name() : "?"} (id ${id}) ×${k}`; }).join(", ");
+    const sams = me.units(UnitType.SAMLauncher).length;
+    alerts.unshift(
+      `NUKED: ${recentNukes.length} warhead${recentNukes.length === 1 ? "" : "s"} launched at you in the last 90 s by ${who}. ` +
+        `Each blast deletes every structure in its radius and turns the land to fallout. Defense Posts do nothing against nukes. ` +
+        (sams > 0 ? `Your ${sams} SAM${sams === 1 ? "" : "s"} only cover 70 tiles each. ` : "You have no SAM Launcher. ") +
+        "Options: build(SAM Launcher) near your Cities and Silos (1.5M, 300 ticks to finish, intercepts every warhead landing within 70 tiles); " +
+        "build(Missile Silo) + nuke(them) at their structures; ally(them) (a new alliance deletes their warheads in flight).",
     );
   }
   for (const a of me.incomingAllianceRequests()) {
@@ -999,11 +1023,16 @@ function translate(game: Game, me: Player, action: Action): Translated {
         return { reason: `target ${action.target} is your ally; break_alliance first` };
       if (me.unitCount(UnitType.MissileSilo) === 0)
         return { reason: "you have no Missile Silo; build one first" };
-      // Aim at the tile of theirs closest to the middle of their territory.
+      // Aim: the tile of theirs closest to the middle of their territory is the
+      // fallback; each of their structures is a candidate too, scored by the
+      // structures the blast would delete (a City is their cap, a Silo their
+      // nukes) plus the tiles it strips, minus candidates that hit my own
+      // tiles or an ally (NukeExecution deletes EVERY owner's units in the
+      // outer radius; listNukeBreakAlliance breaks alliances hit).
       const box = t.largestClusterBoundingBox;
       const cx = box ? (box.min.x + box.max.x) / 2 : null;
       const cy = box ? (box.min.y + box.max.y) / 2 : null;
-      let best: TileRef | undefined;
+      let center: TileRef | undefined;
       let bestD = Infinity;
       let k = 0;
       const total = t.numTilesOwned();
@@ -1013,31 +1042,46 @@ function translate(game: Game, me: Player, action: Action): Translated {
         const d = cx === null ? 0 : Math.abs(game.x(tile) - cx) + Math.abs(game.y(tile) - (cy as number));
         if (d < bestD) {
           bestD = d;
-          best = tile;
+          center = tile;
           if (cx === null) break;
         }
       }
-      if (best === undefined) return { reason: `target ${action.target} owns no land` };
+      if (center === undefined) return { reason: `target ${action.target} owns no land` };
       const unitType = NUKE_MAP[action.nuke];
-      // NukeExecution strips every owner's tiles and deletes every owner's
-      // units inside the outer radius, mine included, and breaks any alliance
-      // whose land (>100 weighted tiles) or structures are hit
-      // (listNukeBreakAlliance). MIRV has no single magnitude: its 350
-      // warheads spread over the target's land, so only the ally check applies.
+      let best: TileRef = center;
+      // MIRV has no single magnitude: its 350 warheads spread over the
+      // target's land, so only the ally check applies and it aims at the middle.
       if (unitType !== UnitType.MIRV) {
         const magnitude = game.config().nukeMagnitudes(unitType);
-        const own = computeNukeBlastCounts({ gm: game, targetTile: best, magnitude }).get(me.smallID()) ?? 0;
-        if (own > 0)
-          return { reason: `the ${action.nuke} blast (${magnitude.outer}-tile radius around the middle of ${action.target}'s land) would cover ~${Math.ceil(own)} of your own tiles and delete your structures there; nuke a target whose middle is farther from your border` };
-        const breaks = wouldNukeBreakAlliance({
-          game,
-          targetTile: best,
-          magnitude,
-          allySmallIds: new Set(me.allies().map((a) => a.smallID())),
-          threshold: game.config().nukeAllianceBreakThreshold(),
-        });
-        if (breaks)
-          return { reason: `the blast would hit an ally's land or structures and break that alliance (traitor mark); pick another target or break_alliance first` };
+        const theirUnits = t.units(Object.values(UNIT_MAP));
+        const allySmallIds = new Set(me.allies().map((a) => a.smallID()));
+        const threshold = game.config().nukeAllianceBreakThreshold();
+        const candidates = [center, ...theirUnits.slice(0, 30).map((u) => u.tile())];
+        let bestScore = -Infinity;
+        let ownAtCenter = 0;
+        for (const tile of candidates) {
+          const counts = computeNukeBlastCounts({ gm: game, targetTile: tile, magnitude });
+          const own = counts.get(me.smallID()) ?? 0;
+          if (tile === center) ownAtCenter = own;
+          if (own > 0) continue;
+          if (wouldNukeBreakAlliance({ game, targetTile: tile, magnitude, allySmallIds, threshold })) continue;
+          const r2 = magnitude.outer * magnitude.outer;
+          const structures = theirUnits.filter((u) => game.euclideanDistSquared(u.tile(), tile) <= r2).length;
+          const score = structures * 200 + (counts.get(t.smallID()) ?? 0);
+          if (score > bestScore) {
+            bestScore = score;
+            best = tile;
+          }
+        }
+        if (bestScore === -Infinity)
+          return {
+            reason:
+              ownAtCenter > 0
+                ? `every ${action.nuke} aim point on ${action.target} (${magnitude.outer}-tile radius) would cover your own tiles (~${Math.ceil(ownAtCenter)} at their middle) or an ally; nuke a target farther from your border`
+                : `every ${action.nuke} aim point on ${action.target} would hit an ally's land or structures and break that alliance (traitor mark); pick another target or break_alliance first`,
+          };
+      } else if (me.isAlliedWith(t)) {
+        return { reason: `target ${action.target} is your ally; break_alliance first` };
       }
       if (me.canBuild(unitType, best) === false)
         return {

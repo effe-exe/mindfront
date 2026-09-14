@@ -57,7 +57,7 @@ import type { TileRef } from "../src/core/game/GameMap";
 import { NodeGameMapLoader } from "../tests/perf/fullgame/NodeGameMapLoader";
 import { systemPrompt } from "./decide";
 import { createArenaServer, ToolLine } from "./mcp/server";
-import { hasFreeLandBorder, trackHistory } from "./observe";
+import { hasFreeLandBorder, trackHistory, recordNukeLaunch } from "./observe";
 import { runPlayer } from "./player";
 import { DEFAULT_INTERVAL_TICKS, EventLine, PlayerCtx, RosterEntry } from "./types";
 
@@ -630,6 +630,7 @@ function onUpdate(gu: GameUpdateViewData | ErrorUpdate) {
     if (seat === undefined || unit === undefined) continue;
     const from = unit.owner();
     const what = unit.type() === UnitType.TransportShip ? `a boat with ${Math.round(unit.troops())} troops` : `a ${unit.type()}`;
+    if (unit.type() !== UnitType.TransportShip) recordNukeLaunch(x.playerID, from.smallID(), unit.type(), g.ticks());
     note(seat, `t${g.ticks()} ${from.name()} (id ${from.smallID()}) launched ${what} at you`);
   }
 

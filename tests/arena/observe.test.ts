@@ -1,4 +1,4 @@
-import { observe, toIntents, trackHistory } from "../../arena/observe";
+import { observe, toIntents, trackHistory, recordNukeLaunch } from "../../arena/observe";
 import { PlayerCtx, RATIO_MAX } from "../../arena/types";
 import { Game, Player, PlayerType, UnitType } from "../../src/core/game/Game";
 import { playerInfo, setup } from "../util/Setup";
@@ -144,6 +144,23 @@ describe("arena/observe", () => {
     player2.relinquish(game.ref(13, 11));
     player2.conquer(game.ref(61, 61));
     expect(launch().intents[0]).toMatchObject({ type: "build_unit", unit: UnitType.AtomBomb, tile: game.ref(61, 61) });
+  });
+
+  test("nuke aims at the target's structures, not the empty middle of their land", () => {
+    player1.buildUnit(UnitType.MissileSilo, game.ref(11, 11), {});
+    // player2's blob grows east; its City sits at the far end, away from the centre.
+    for (let x = 63; x <= 75; x++) for (let y = 60; y <= 62; y++) player2.conquer(game.ref(x, y));
+    player2.buildUnit(UnitType.City, game.ref(75, 61), {});
+    const obs = observe(game, player1, ctx(), []);
+    const { intents } = toIntents(game, player1, obs, { reasoning: "", notes: "", actions: [{ type: "nuke", target: player2.smallID(), nuke: "Atom Bomb" }] }, ctx());
+    // TestConfig blast radius is 1: only an aim point on the City itself deletes it.
+    expect(intents[0]).toMatchObject({ type: "build_unit", unit: UnitType.AtomBomb, tile: game.ref(75, 61) });
+  });
+
+  test("NUKED alert names the launcher and the counter", () => {
+    recordNukeLaunch(player1.smallID(), player2.smallID(), "Atom Bomb", game.ticks());
+    const obs = observe(game, player1, ctx(), []);
+    expect(obs.alerts.some((a) => /^NUKED: 1 warhead .*player2 \(id \d+\) ×1.*no SAM Launcher.*SAM Launcher/.test(a))).toBe(true);
   });
 
   test("drops an attack on a non-bordering player with a reason", () => {
