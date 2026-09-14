@@ -280,7 +280,8 @@ function writeEvent(line: EventLine | ToolLine) {
 
 const ACTION_TOOLS = new Set([
   "expand", "attack", "boat", "ally", "accept_alliance", "reject_alliance",
-  "break_alliance", "build", "emoji", "chat",
+  "break_alliance", "extend_alliance", "donate", "recall_boats", "build",
+  "upgrade", "emoji", "chat", "retreat", "nuke", "spawn",
 ]);
 const mcpUrl = `http://localhost:${flags.mcpPort}/mcp`;
 fs.writeFileSync(

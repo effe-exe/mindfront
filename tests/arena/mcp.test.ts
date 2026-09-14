@@ -118,6 +118,7 @@ describe("arena/mcp", () => {
       "donate",
       "recall_boats",
       "build",
+      "upgrade",
       "emoji",
       "chat",
       "say",
@@ -227,6 +228,25 @@ describe("arena/mcp", () => {
     expect((await call("recall_boats", { target: player1.smallID() })).reason).toMatch(/no boat of yours/);
     expect(await call("recall_boats", { target: player2.smallID() })).toEqual({ ok: true });
     expect(sent).toEqual([{ type: "cancel_boat", unitID: boat.id() }]);
+  });
+
+  test("upgrade raises a finished structure; building ones are listed apart", async () => {
+    const city = player1.buildUnit(UnitType.City, game.ref(11, 11), {});
+    city.setUnderConstruction(true);
+    let obs = await call("observe");
+    expect(obs.me.structures.City).toBe(0);
+    expect(obs.me.underConstruction.City).toBe(1);
+    expect(obs.me.units).toEqual([
+      { id: city.id(), type: "City", level: 1, underConstruction: true, x: 11, y: 11 },
+    ]);
+    player1.addGold(BigInt(obs.build.City.cost));
+    expect((await call("upgrade", { unit: "City" })).reason).toMatch(/under construction/);
+    city.setUnderConstruction(false);
+    obs = await call("observe");
+    expect(obs.me.structures.City).toBe(1);
+    expect((await call("upgrade", { unit: "Defense Post" })).reason).toMatch(/cannot be upgraded/);
+    expect(await call("upgrade", { unit: "City" })).toEqual({ ok: true });
+    expect(sent).toEqual([{ type: "upgrade_structure", unit: UnitType.City, unitId: city.id() }]);
   });
 
   test("say emits a tool event line", async () => {

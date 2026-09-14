@@ -184,9 +184,17 @@ function compass(dx: number, dy: number): Compass {
   return COMPASS[((i % 8) + 8) % 8];
 }
 
-function structuresOf(p: Player): Record<BuildableUnit, number> {
+/** Sum of levels per type; `unitCount` also counts units still building, which
+ * have no effect yet (maxTroops skips unfinished Cities). */
+function structuresOf(p: Player, underConstruction = false): Record<BuildableUnit, number> {
   const out = {} as Record<BuildableUnit, number>;
-  for (const u of BUILDABLE_UNITS) out[u] = p.unitCount(UNIT_MAP[u]);
+  for (const u of BUILDABLE_UNITS) {
+    let n = 0;
+    for (const unit of p.units(UNIT_MAP[u])) {
+      if (unit.isUnderConstruction() === underConstruction) n += underConstruction ? 1 : unit.level();
+    }
+    out[u] = n;
+  }
   return out;
 }
 
@@ -344,7 +352,8 @@ export function observe(
   const buildCosts = {} as Record<BuildableUnit, number>;
   const build = {} as Obs["build"];
   const ownShore = hasCoast(game, me);
-  const ports = me.unitCount(UnitType.Port);
+  // Warships launch from a finished Port only (PlayerImpl.canBuildUnitType).
+  const ports = me.units(UnitType.Port).filter((u) => !u.isUnderConstruction()).length;
   const ownsLand = me.numTilesOwned() > 0;
   for (const unit of BUILDABLE_UNITS) {
     const cost = game.unitInfo(UNIT_MAP[unit]).cost(game, me);
@@ -360,7 +369,7 @@ export function observe(
           ? [ports > 0, ports > 0 ? "launched from one of your Ports" : "needs a Port; you have none"]
           : [ownsLand, "on any of your land tiles, spaced away from your other structures"];
     const note = `${affordable ? "affordable" : `need ${Number(cost) - Number(gold)} more gold`}; ${where}`;
-    build[unit] = { cost: Number(cost), affordable, placeable, note };
+    build[unit] = { cost: Number(cost), affordable, placeable, upgradable: Boolean(game.unitInfo(UNIT_MAP[unit]).upgradable), note };
     if (affordable && placeable) canBuild.push({ unit, cost: Number(cost) });
   }
 
@@ -380,6 +389,20 @@ export function observe(
   const cfg = game.config();
   const myMaxTroops = cfg.maxTroops(me);
   const myBox = clusterBox(game, me);
+  const myStructures = structuresOf(me);
+  const UNIT_NAME = new Map(BUILDABLE_UNITS.map((u) => [UNIT_MAP[u], u]));
+  const myUnits = me
+    .units(Object.values(UNIT_MAP))
+    .map((u) => ({
+      id: u.id(),
+      type: UNIT_NAME.get(u.type())!,
+      level: u.level(),
+      underConstruction: u.isUnderConstruction(),
+      x: game.x(u.tile()),
+      y: game.y(u.tile()),
+    }))
+    .sort((a, b) => Math.abs(a.x - myBox.center.x) + Math.abs(a.y - myBox.center.y) - Math.abs(b.x - myBox.center.x) - Math.abs(b.y - myBox.center.y))
+    .slice(0, 40);
   const myDeltas = deltas(me, tick);
   // isImmune() is the truth; elapsedGameSeconds is the only public clock that
   // matches the engine's spawn-immunity countdown.
@@ -444,10 +467,10 @@ export function observe(
       landPct: totalLand > 0 ? round1((tiles / totalLand) * 100) : 0,
       troops: Math.round(me.troops()),
       gold: Number(gold),
-      cities: me.unitCount(UnitType.City),
-      ports: me.unitCount(UnitType.Port),
-      defensePosts: me.unitCount(UnitType.DefensePost),
-      silos: me.unitCount(UnitType.MissileSilo),
+      cities: myStructures.City,
+      ports: myStructures.Port,
+      defensePosts: myStructures["Defense Post"],
+      silos: myStructures["Missile Silo"],
       boatsInFlight: me.unitCount(UnitType.TransportShip),
       allies: me.allies().map((a) => a.smallID()),
       pendingAllianceRequestsFrom: me
@@ -487,7 +510,9 @@ export function observe(
         id: r.requestor().smallID(),
         ticksLeft: r.createdAt() + cfg.allianceRequestDuration() - tick,
       })),
-      structures: structuresOf(me),
+      structures: myStructures,
+      underConstruction: structuresOf(me, true),
+      units: myUnits,
       center: myBox.center,
       bbox: myBox.bbox,
     },
@@ -773,12 +798,41 @@ function translate(game: Game, me: Player, action: Action): Translated {
         return {
           reason:
             unitType === UnitType.Port
-              ? "Port needs a coastal tile you own"
+              ? "Port needs a coastal tile you own; none of your shore tiles is at least 15 tiles from your other structures"
               : unitType === UnitType.Warship
-                ? "Warship needs one of your Ports"
-                : `no free spot for ${action.unit} (keep distance from your other structures)`,
+                ? "Warship needs a finished Port of yours"
+                : `no tile for ${action.unit}: every structure needs 15 tiles from your other structures; grow, or upgrade(${JSON.stringify(action.unit)}) instead`,
         };
       return { intent: { type: "build_unit", unit: unitType, tile } };
+    }
+
+    case "upgrade": {
+      // UpgradeStructureExecution -> canUpgradeUnit: type upgradable, gold >=
+      // the next-unit price of that type, unit finished and mine. Instant.
+      if (action.unit === undefined) return { reason: "upgrade needs a unit type" };
+      const unitType = UNIT_MAP[action.unit];
+      if (!game.unitInfo(unitType).upgradable)
+        return { reason: `${action.unit} cannot be upgraded; build another one instead` };
+      const mine = me.units(unitType);
+      if (mine.length === 0) return { reason: `you have no ${action.unit}; build one first` };
+      const u =
+        action.id === undefined
+          ? mine.filter((x) => !x.isUnderConstruction()).sort((a, b) => a.level() - b.level())[0]
+          : mine.find((x) => x.id() === action.id);
+      if (u === undefined)
+        return {
+          reason:
+            action.id === undefined
+              ? `every ${action.unit} of yours is still under construction; wait for it to finish`
+              : `id ${action.id} is not one of your ${action.unit}s; ids are in me.units`,
+        };
+      if (u.isUnderConstruction())
+        return { reason: `${action.unit} ${u.id()} is still under construction; wait for it to finish` };
+      const cost = Number(game.unitInfo(unitType).cost(game, me));
+      if (Number(me.gold()) < cost)
+        return { reason: `upgrading ${action.unit} costs ${cost} (the next-unit price); you have ${Number(me.gold())}` };
+      if (!me.canUpgradeUnit(u)) return { reason: `${action.unit} ${u.id()} cannot be upgraded right now` };
+      return { intent: { type: "upgrade_structure", unit: unitType, unitId: u.id() } };
     }
 
     case "retreat": {

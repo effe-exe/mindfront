@@ -43,7 +43,7 @@
 
 ## 5. Structures
 
-n = already built of that type. Gold charged at start, never refunded. ≥15 tiles between structures (`structureMinDist`). No upgrade tool: each `build` is new. A structure changes hands with its tile (Defense Post destroyed instead); a tile made unowned by a nuke destroys it; tribes delete any structure they hold within ~30 s.
+n = already built of that type, upgrades included. Gold charged at start, never refunded. ≥15 tiles between structures (`structureMinDist`). `upgrade(unit, id?)`: +1 level on a finished structure of mine, instant, same price as the next new one (`UpgradeStructureExecution`, `canUpgradeUnit`), no spacing; City, Port, Factory, Missile Silo, SAM Launcher only (`upgradable`); `id` from `me.units`, omitted = my lowest-level finished one. Level = effect multiplier: City +250k cap per level, Port one trade roll per level, Factory one train per level, Silo/SAM one missile per level. A structure only counts once finished (`me.underConstruction`). A structure changes hands with its tile (Defense Post destroyed instead); a tile made unowned by a nuke destroys it; tribes delete any structure they hold within ~30 s.
 
 | Unit | Gold | Ticks | Effect | `build` pool |
 | --- | --- | --- | --- | --- |
@@ -99,6 +99,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `donate` | `target`, `troops` or `gold` | id in `me.allies`; 100 ticks since my last gift to them | §7 | not your ally; cooldown; both/neither amount; they are at cap |
 | `recall_boats` | `target?` | `boatsInFlight` > 0 | boats turn home, 75% land (§4) | no boat at sea; none sailing at target |
 | `build` | `unit`, `at?` | unit in `canBuild`; `at` visible id or `"sea"` | new structure (§5) | `build[unit].note`; no spot 15 from others; no border with `at`; no coast |
+| `upgrade` | `unit`, `id?` | `build[unit].affordable`; a finished one of that type in `me.units` | +1 level, instant (§5) | not upgradable (Defense Post, Warship); none owned; still building; unknown id; gold |
 | `retreat` | `target?` | a running attack (none = all, expands too) | survivors home, −25% vs a player, 0% vs unclaimed | no attack running |
 | `nuke` | `target`, `nuke` | `nukes.silos` > 0, `nuke` in `nukes.affordable`, not allied | §6 | no silo; unaffordable; allied; no ready silo or immunity; target owns no land |
 | `emoji`, `chat` | `emoji`/`key`, `target?` (chat: needed) | valid value; target visible (emoji omitted = all) | line in the recipient's `recentEvents` | unknown value; unknown target |
@@ -113,7 +114,8 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `me.tiles`, `me.landPct`, `me.tilesDelta1m` | land; % of all; net tiles last minute | stalled → new target or route |
 | `me.freeLandAtBorder`, `unclaimedLandAdjacent` | distinct free tiles at my border (600 border tiles sampled); `expand` legal | ≈0 / false → boat or attack |
 | `me.troops`, `me.maxTroops`, `me.troopsPct`, `me.gold`, `me.goldIncomePerMin` | army, cap (§2), throttle; treasury; gold last minute, all sources | high pct → spend or City; what to buy; is trade/rail paying |
-| `me.cities`, `me.ports`, `me.defensePosts`, `me.silos`, `me.structures`, `me.boatsInFlight` | counts (`structures` = all 7 types); transports at sea, max 3 | next price on each ladder; can `boat` |
+| `me.cities`, `me.ports`, `me.defensePosts`, `me.silos`, `me.structures`, `me.underConstruction`, `me.boatsInFlight` | Σ levels of finished structures (`structures` = all 7 types); still building per type (no effect yet); transports at sea, max 3 | next price on each ladder; wait before counting on it; can `boat` |
+| `me.units[{id,type,level,underConstruction,x,y}]` | every structure I own, ≤40 nearest my centre | `upgrade` id; which City/Port is exposed |
 | `me.allies`, `me.allianceExpiry[{id,ticksLeft,theyAgreedToExtend,iAgreedToExtend}]`, `me.pendingAllianceRequestsFrom`, `me.pendingRequestExpiry[{id,ticksLeft}]` | allies; ticks until each expires and who has asked to renew; offers awaiting me and ticks until they lapse | which border is frozen, how long; `extend_alliance` when `ticksLeft` ≤ 300 or they asked; accept / reject |
 | `me.incomingAttacks[{from,troops}]`, `me.outgoingAttacks[{to,troops,troopsRemaining}]` | attacks on me, current stacks; my running attacks (`to` = id or `"land"`; both troop fields = current stack) | reserve, counter-cancel (§3), Defense Post `at`=from; no re-send, `retreat` |
 | `me.immuneUntilTick`, `me.isTraitor`, `me.betrayals` | tick immunity ends (0 = over); traitor now; lifetime count | AI attacks wait; tribe and cheap attacks while traitor |
@@ -121,8 +123,8 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `id`, `name`, `kind`, `tiles`, `troops`, `maxTroops`, `troopsPct`, `gold` | id for every tool; `"llm"` or `"tribe"`; size, army, cap, throttle, treasury | tribe = cheap, full loot; `troops/tiles` = density (§3); <100 tiles = dead |
 | `relation`, `allied`, `isTraitor`, `betrayals`, `allies[]`, `targets[]` | ledger (§7); allied with me; traitor now; lifetime; their allies; ids they marked | trust; traitor = cheap target; avoid allies of the strong |
 | `attackingMe`, `attacking[]`, `attackedBy[]`, `tilesDelta1m` | attack on me; ids they attack; ids attacking them; their net tiles last minute | besieged or shrinking = cheap; growing = threat |
-| `coastal`, `sharedBorderTiles`, `direction`, `distance`, `structures` | owns shore (sampled); my border tiles touching them (≤2,000 scanned); compass and Manhattan distance of cluster centres; counts | boat/port; front width = speed (§3); boat ticks = distance; posts, silos |
-| `canBuild[{unit,cost}]`, `buildCosts`, `build[unit]{cost,affordable,placeable,note}`, `nukes{silos,costs,affordable}` | affordable-and-placeable now; every price; why a build fails; silos, warhead prices, launchable now | `build`; `nuke` |
+| `coastal`, `sharedBorderTiles`, `direction`, `distance`, `structures` | owns shore (sampled); my border tiles touching them (≤2,000 scanned); compass and Manhattan distance of cluster centres; Σ levels of finished structures | boat/port; front width = speed (§3); boat ticks = distance; posts, silos |
+| `canBuild[{unit,cost}]`, `buildCosts`, `build[unit]{cost,affordable,placeable,upgradable,note}`, `nukes{silos,costs,affordable}` | affordable-and-placeable now; every price; why a build fails; levellable type; silos, warhead prices, launchable now | `build`; `upgrade`; `nuke` |
 | `recentEvents[]`, `globalEvents[]` | ≤8 involving me: attacks on me, conquests, alliances, betrayals, nukes, emoji/chat to me; ≤10 map-wide (`t<tick>` prefix) | threats; who fights whom |
 | `plan`, `notes`, `lastResult` | §0.6–0.7 | continuity |
 
@@ -130,7 +132,7 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 
 1. Spawn: free land in more than one direction, coast plus interior; reject cells whose only exit is water or another's pick.
 2. IF `unclaimedLandAdjacent` and `freeLandAtBorder` > ~50: `expand` (ratio 0.3–0.5); ≥6,600 troops saturates plains speed.
-3. IF `troopsPct` ≥ 80: spend (expand/attack/boat) or `build City`.
+3. IF `troopsPct` ≥ 80: spend (expand/attack/boat) or `build City` (`upgrade("City")` when no tile is 15 from my other structures: same price, same +250k).
 4. IF `gold` covers the bottleneck: City when the cap throttles; Port only for trade (needs another AI's Port on the same sea) or Warships, never for boats (boats need only a shore tile); Defense Post `at` = the pressing neighbour; Factory once a City/Port stands within 110 tiles; SAM only when a rival's `structures["Missile Silo"]` > 0. Idle gold earns nothing; a second Port costs double.
 5. IF `freeLandAtBorder` ≈ 0: target by §3: lowest `troops/tiles`, widest `sharedBorderTiles`, non-empty `attackedBy`, no Defense Posts, `tilesDelta1m` < 0; stack ≥ 1.7 × their troops (D/A ≤ 0.6).
 6. IF `reachableByBoat` has a tribe with high `gold` and low `troops/tiles`: `boat` with troops above their army, then `expand` from the beachhead.

@@ -68,7 +68,7 @@ const RATIO_DESC =
   "fraction of your troops to send, 0.05-0.6 (clamped); defaults to 0.3.";
 
 const UNIT_EFFECTS: Record<BuildableUnit, string> = {
-  City: "Raises your troop cap by 250k (each City is a new structure; no upgrades in this arena).",
+  City: "Raises your troop cap by 250k per level once finished (20 ticks). Upgrade with the upgrade tool instead of building a second one when space is tight.",
   Port: "Trade ships (gold from another LLM's Port on the same sea) and Warships. Boats do NOT need a Port: they launch from any shore tile you own.",
   "Defense Post":
     "Multiplies attacker losses x5 and slows them x3 on your tiles within 30 tiles of it.",
@@ -601,6 +601,18 @@ export function createArenaServer(opts: ArenaServerOpts): {
         "\"sea\" places it on your coast; omit it to let the arena pick any legal spot.",
       { unit: z.enum(BUILDABLE_UNITS), at: z.union([z.number().int(), z.literal("sea")]).optional() },
       (a) => ({ type: "build", unit: a.unit as Action["unit"], at: a.at as Action["at"] }),
+    );
+
+    action(
+      "upgrade",
+      "Raise one of your structures a level in place: instant, costs the same as the next new one " +
+        "of that type (the shared price ladder advances), no 15-tile spacing needed. City +250k troop " +
+        "cap per level; Port one more trade-ship roll per level; Missile Silo / SAM Launcher one more " +
+        "missile per level; Factory one more train per level. Defense Post and Warship cannot be " +
+        "upgraded. id: a structure id from observe.me.units; omitted = your lowest-level finished " +
+        "one of that type. Needs observe.build[unit].affordable and a finished structure.",
+      { unit: z.enum(BUILDABLE_UNITS), id: z.number().int().optional() },
+      (a) => ({ type: "upgrade", unit: a.unit as Action["unit"], id: a.id as number | undefined }),
     );
 
     server.registerTool(

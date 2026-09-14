@@ -89,6 +89,7 @@ export interface ObsNeighbor {
   direction: Compass;
   /** manhattan distance between cluster centres, in tiles */
   distance: number;
+  /** completed structures: sum of levels per type */
   structures: Record<BuildableUnit, number>;
 }
 
@@ -147,7 +148,19 @@ export interface Obs {
       iAgreedToExtend: boolean;
     }[];
     pendingRequestExpiry: { id: number; ticksLeft: number }[];
+    /** completed structures: sum of levels per type */
     structures: Record<BuildableUnit, number>;
+    /** structures still building per type (no effect until done) */
+    underConstruction: Record<BuildableUnit, number>;
+    /** every structure I own (≤40, nearest my centre first); `id` feeds `upgrade` */
+    units: {
+      id: number;
+      type: BuildableUnit;
+      level: number;
+      underConstruction: boolean;
+      x: number;
+      y: number;
+    }[];
     center: { x: number; y: number };
     bbox: BBox;
   };
@@ -163,8 +176,8 @@ export interface Obs {
   buildCosts: Record<BuildableUnit, number>;
   /** nuclear: silos you own, current price of each warhead, which you could launch now */
   nukes: { silos: number; costs: Record<NukeType, number>; affordable: NukeType[] };
-  /** per structure: can you pay for it, and is there a legal tile for it right now */
-  build: Record<BuildableUnit, { cost: number; affordable: boolean; placeable: boolean; note: string }>;
+  /** per structure: can you pay for it, is there a legal tile for it right now, can it be levelled with `upgrade` */
+  build: Record<BuildableUnit, { cost: number; affordable: boolean; placeable: boolean; upgradable: boolean; note: string }>;
   /** last ≤8 human-readable events involving me */
   recentEvents: string[];
   /** last ≤10 human-readable events involving anyone */
@@ -201,6 +214,7 @@ export const ACTION_TYPES = [
   "donate",
   "recall_boats",
   "build",
+  "upgrade",
   "emoji",
   "chat",
   "nuke",
@@ -224,6 +238,8 @@ export const ActionSchema = z
     /** donate: absolute gold to give an ally */
     gold: z.number().int().positive().optional(),
     unit: z.enum(BUILDABLE_UNITS).optional(),
+    /** upgrade: structure id from me.units; omitted = lowest-level completed one of that type */
+    id: z.number().int().optional(),
     /** emoji character, must exist in flattenedEmojiTable */
     emoji: z.string().optional(),
     /** quick chat key, must satisfy QuickChatKeySchema (resources/QuickChat.json) */
@@ -267,6 +283,7 @@ export const ACT_TOOL_PARAMETERS = {
           troops: { type: "integer", minimum: 1 },
           gold: { type: "integer", minimum: 1 },
           unit: { enum: [...BUILDABLE_UNITS] },
+          id: { type: "integer" },
           emoji: { type: "string" },
           key: { type: "string" },
           nuke: { enum: [...NUKE_TYPES] },

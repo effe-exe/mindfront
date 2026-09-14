@@ -262,6 +262,19 @@ export const sanitize: Sanitize = (decision, obs) => {
           reason = `at=${action.at} is not a visible player id`;
         }
         break;
+      case "upgrade":
+        if (action.unit === undefined) {
+          reason = "upgrade needs a unit";
+        } else if (!obs.build[action.unit].upgradable) {
+          reason = `${action.unit} cannot be upgraded; build another one instead`;
+        } else if (action.id !== undefined && !obs.me.units.some((u) => u.id === action.id)) {
+          reason = `id ${action.id} is not one of your structures; ids: [${obs.me.units.map((u) => u.id).join(",")}]`;
+        } else if (!obs.me.units.some((u) => u.type === action.unit)) {
+          reason = `you own no ${action.unit}; build one first`;
+        } else if (!obs.build[action.unit].affordable) {
+          reason = `${action.unit} upgrade costs ${obs.build[action.unit].cost}; you have ${obs.me.gold}`;
+        }
+        break;
       case "emoji":
         if (action.emoji === undefined || !EMOJI_SET.has(action.emoji)) {
           reason = `unknown emoji: ${action.emoji}`;
@@ -406,6 +419,8 @@ if (
       allianceExpiry: [{ id: 7, ticksLeft: 1000, theyAgreedToExtend: false, iAgreedToExtend: false }],
       pendingRequestExpiry: [{ id: 3, ticksLeft: 100 }],
       structures: { ...NO_STRUCTURES, City: 1 },
+      underConstruction: { ...NO_STRUCTURES },
+      units: [{ id: 41, type: "City", level: 1, underConstruction: false, x: 100, y: 100 }],
       center: { x: 100, y: 100 },
       bbox: { minX: 80, minY: 80, maxX: 120, maxY: 120 },
     },
@@ -437,13 +452,13 @@ if (
       Warship: 250000,
     },
     build: {
-      City: { cost: 125000, affordable: true, placeable: true, note: "affordable; on any of your land tiles" },
-      Port: { cost: 125000, affordable: false, placeable: false, note: "need 1 more gold; needs a coastal tile you own; you have none" },
-      "Defense Post": { cost: 50000, affordable: false, placeable: true, note: "need 1 more gold; on any of your land tiles" },
-      "Missile Silo": { cost: 1000000, affordable: false, placeable: true, note: "need gold" },
-      "SAM Launcher": { cost: 1500000, affordable: false, placeable: true, note: "need gold" },
-      Factory: { cost: 250000, affordable: false, placeable: true, note: "need gold" },
-      Warship: { cost: 250000, affordable: false, placeable: false, note: "needs a Port; you have none" },
+      City: { cost: 125000, affordable: true, placeable: true, upgradable: true, note: "affordable; on any of your land tiles" },
+      Port: { cost: 125000, affordable: false, placeable: false, upgradable: true, note: "need 1 more gold; needs a coastal tile you own; you have none" },
+      "Defense Post": { cost: 50000, affordable: false, placeable: true, upgradable: false, note: "need 1 more gold; on any of your land tiles" },
+      "Missile Silo": { cost: 1000000, affordable: false, placeable: true, upgradable: true, note: "need gold" },
+      "SAM Launcher": { cost: 1500000, affordable: false, placeable: true, upgradable: true, note: "need gold" },
+      Factory: { cost: 250000, affordable: false, placeable: true, upgradable: true, note: "need gold" },
+      Warship: { cost: 250000, affordable: false, placeable: false, upgradable: false, note: "needs a Port; you have none" },
     },
     nukes: { silos: 0, costs: { "Atom Bomb": 750000, "Hydrogen Bomb": 5000000, MIRV: 25000000 }, affordable: [] },
     recentEvents: [],
@@ -523,6 +538,17 @@ if (
     );
     assert.equal(decision.actions.length, 1, "extend_alliance only on an ally");
     assert.equal(decision.actions[0].target, 7);
+  }
+  {
+    const { decision } = sanitize(
+      mk([
+        { type: "upgrade", unit: "City" },
+        { type: "upgrade", unit: "City", id: 99 },
+        { type: "upgrade", unit: "Port" },
+      ]),
+      CANNED_OBS,
+    );
+    assert.equal(decision.actions.length, 1, "upgrade only an owned structure with a real id");
   }
   {
     const { decision, dropped } = sanitize(
