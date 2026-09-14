@@ -570,6 +570,26 @@ export function createArenaServer(opts: ArenaServerOpts): {
     );
 
     action(
+      "donate",
+      "Give an ally troops OR gold (exactly one, a whole number). Allies only; one donation per " +
+        "ally per 10 s (gold and troops share the cooldown). Troops are capped at the room under " +
+        "their troop cap, and a gift of at least ~1/12 of their cap raises their relation to you " +
+        "by 50; gold raises it 5 per 2,500 (chunk grows with match time). Use it to prop up an ally " +
+        "who is being eaten by the rival you both fear. Only ids in observe.me.allies.",
+      { target: z.number().int(), troops: z.number().int().positive().optional(), gold: z.number().int().positive().optional() },
+      (a) => ({ type: "donate", target: a.target as number, troops: a.troops as number | undefined, gold: a.gold as number | undefined }),
+    );
+
+    action(
+      "recall_boats",
+      "Turn your boats around: every transport at sea, or only those sailing at target. They " +
+        "return to your nearest shore and land 75% of the troops (25% lost). Use it when a warship " +
+        "or a Defense Post appears on the landing shore. Needs observe.me.boatsInFlight > 0.",
+      { target: z.number().int().optional() },
+      (a) => ({ type: "recall_boats", target: a.target as number | undefined }),
+    );
+
+    action(
       "build",
       "Build a structure with gold. City raises your troop cap; Port earns trade gold; " +
         "Defense Post strengthens nearby borders; Factory builds rail and trains that " +

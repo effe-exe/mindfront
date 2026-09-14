@@ -198,6 +198,8 @@ export const ACTION_TYPES = [
   "reject_alliance",
   "break_alliance",
   "extend_alliance",
+  "donate",
+  "recall_boats",
   "build",
   "emoji",
   "chat",
@@ -217,6 +219,10 @@ export const ActionSchema = z
     target: z.number().int().optional(),
     /** fraction of troops to send (attack/expand/boat); clamped to [RATIO_MIN, RATIO_MAX] */
     ratio: z.number().optional(),
+    /** donate: absolute troops to give an ally (capped at their free cap room) */
+    troops: z.number().int().positive().optional(),
+    /** donate: absolute gold to give an ally */
+    gold: z.number().int().positive().optional(),
     unit: z.enum(BUILDABLE_UNITS).optional(),
     /** emoji character, must exist in flattenedEmojiTable */
     emoji: z.string().optional(),
@@ -258,6 +264,8 @@ export const ACT_TOOL_PARAMETERS = {
           type: { enum: [...ACTION_TYPES] },
           target: { type: "integer" },
           ratio: { type: "number", minimum: RATIO_MIN, maximum: RATIO_MAX },
+          troops: { type: "integer", minimum: 1 },
+          gold: { type: "integer", minimum: 1 },
           unit: { enum: [...BUILDABLE_UNITS] },
           emoji: { type: "string" },
           key: { type: "string" },

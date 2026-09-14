@@ -244,9 +244,13 @@ export const sanitize: Sanitize = (decision, obs) => {
         break;
       case "break_alliance":
       case "extend_alliance":
+      case "donate":
         if (action.target === undefined || !allyIds.has(action.target)) {
           reason = `target ${action.target} is not your ally`;
         }
+        break;
+      case "recall_boats":
+        if (obs.me.boatsInFlight === 0) reason = "you have no boat at sea";
         break;
       case "build":
         if (action.unit === undefined || !buildableUnits.has(action.unit)) {

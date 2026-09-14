@@ -9,7 +9,7 @@ import {
   type ToolLine,
 } from "../../arena/mcp/server";
 import type { EventLine, PlayerCtx } from "../../arena/types";
-import { Game, Player, PlayerType } from "../../src/core/game/Game";
+import { Game, Player, PlayerType, UnitType } from "../../src/core/game/Game";
 import type { Intent } from "../../src/core/Schemas";
 import { playerInfo, setup } from "../util/Setup";
 
@@ -74,7 +74,7 @@ function makeServer() {
 
 describe("arena/mcp", () => {
   beforeEach(async () => {
-    game = await setup("plains", { instantBuild: true }, [
+    game = await setup("plains", { instantBuild: true, donateGold: true, donateTroops: true }, [
       playerInfo("player1", PlayerType.Human),
       playerInfo("player2", PlayerType.Human),
     ]);
@@ -115,6 +115,8 @@ describe("arena/mcp", () => {
       "reject_alliance",
       "break_alliance",
       "extend_alliance",
+      "donate",
+      "recall_boats",
       "build",
       "emoji",
       "chat",
@@ -200,6 +202,31 @@ describe("arena/mcp", () => {
     r = await call("extend_alliance", { target: player2.smallID() });
     expect(r).toEqual({ ok: true });
     expect(sent[0]).toEqual({ type: "allianceExtension", recipient: player2.id() });
+  });
+
+  test("donate gives an ally troops or gold, once per 10 s", async () => {
+    expect((await call("donate", { target: player2.smallID(), troops: 100 })).reason).toMatch(/not your ally/);
+    player1.createAllianceRequest(player2)?.accept();
+    expect((await call("donate", { target: player2.smallID() })).reason).toMatch(/exactly one/);
+    expect(await call("donate", { target: player2.smallID(), troops: 100 })).toEqual({ ok: true });
+    expect(sent[0]).toEqual({ type: "donate_troops", recipient: player2.id(), troops: 100 });
+    player1.addGold(5000n);
+    expect(await call("donate", { target: player2.smallID(), gold: 9999 })).toEqual({ ok: true });
+    expect(sent[1]).toEqual({ type: "donate_gold", recipient: player2.id(), gold: 5000 });
+    // the engine's cooldown starts when a donation lands
+    player1.donateTroops(player2, 10);
+    expect((await call("donate", { target: player2.smallID(), gold: 10 })).reason).toMatch(/10 s/);
+  });
+
+  test("recall_boats cancels only the boats sailing at the target", async () => {
+    expect((await call("recall_boats")).reason).toMatch(/no boat/);
+    const boat = player1.buildUnit(UnitType.TransportShip, game.ref(10, 10), {
+      troops: 500,
+      targetTile: game.ref(60, 60),
+    });
+    expect((await call("recall_boats", { target: player1.smallID() })).reason).toMatch(/no boat of yours/);
+    expect(await call("recall_boats", { target: player2.smallID() })).toEqual({ ok: true });
+    expect(sent).toEqual([{ type: "cancel_boat", unitID: boat.id() }]);
   });
 
   test("say emits a tool event line", async () => {

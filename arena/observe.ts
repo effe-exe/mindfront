@@ -654,6 +654,49 @@ function translate(game: Game, me: Player, action: Action): Translated {
       return { intent: { type: "allianceExtension", recipient: t.id() } };
     }
 
+    case "donate": {
+      // DonateTroops/GoldExecution: allies only (canDonate* = isFriendly), one
+      // donation per recipient per donateCooldown (100 ticks) for gold and
+      // troops together; troops capped at the recipient's free cap room, gold
+      // and troops at what I hold (removeGold/removeTroops clamp).
+      const t = resolveTarget(game, action.target);
+      if (!t) return { reason: `target ${action.target} does not exist` };
+      const troops = action.troops ?? 0;
+      const gold = action.gold ?? 0;
+      if ((troops > 0) === (gold > 0))
+        return { reason: "donate needs exactly one of troops or gold, a positive whole number" };
+      if (!me.isAlliedWith(t))
+        return { reason: `${action.target} is not your ally; donations go to allies only` };
+      if (troops > 0 ? !me.canDonateTroops(t) : !me.canDonateGold(t))
+        return { reason: `cannot donate to ${action.target} now: one donation per ally per 100 ticks (10 s), gold and troops share the cooldown` };
+      if (troops > 0) {
+        const room = Math.floor(game.config().maxTroops(t) - t.troops());
+        if (room <= 0) return { reason: `${action.target} is at their troop cap; troops would be wasted` };
+        return { intent: { type: "donate_troops", recipient: t.id(), troops: Math.min(troops, Math.floor(me.troops()), room) } };
+      }
+      return { intent: { type: "donate_gold", recipient: t.id(), gold: Math.min(gold, Number(me.gold())) } };
+    }
+
+    case "recall_boats": {
+      // cancel_boat -> BoatRetreatExecution: the boat sails back to my nearest
+      // shore and lands 75% of its troops (malusForRetreat 25).
+      const t = action.target === undefined ? null : resolveTarget(game, action.target);
+      if (action.target !== undefined && !t)
+        return { reason: `target ${action.target} does not exist` };
+      const ids = me
+        .units(UnitType.TransportShip)
+        .filter((b) => {
+          if (b.transportShipState().isRetreating) return false;
+          if (t === null) return true;
+          const dst = b.targetTile();
+          return dst !== undefined && game.owner(dst) === t;
+        })
+        .map((b) => b.id());
+      if (ids.length === 0)
+        return { reason: t === null ? "you have no boat at sea" : `no boat of yours is sailing at ${action.target}; recall_boats() with no target recalls every boat` };
+      return { intents: ids.map((unitID) => ({ type: "cancel_boat", unitID })) };
+    }
+
     case "build": {
       if (action.unit === undefined)
         return { reason: "build needs a unit type" };

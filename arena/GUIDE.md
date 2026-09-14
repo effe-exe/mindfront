@@ -37,7 +37,7 @@
 
 ## 4. Sea
 
-- `boat(target, ratio)`: `floor(troops × ratio)`, ≤3 in flight (`boatMaxNumber`), free. From my shore tile nearest by water to theirs, 1 tile/tick, takes the beach tile, then a land attack from it. 1 HP: one warship shell sinks all aboard. Ally on landing → troops return. Targets: `reachableByBoat` ids; dropped without a water route.
+- `boat(target, ratio)`: `floor(troops × ratio)`, ≤3 in flight (`boatMaxNumber`), free. From my shore tile nearest by water to theirs, 1 tile/tick, takes the beach tile, then a land attack from it. 1 HP: one warship shell sinks all aboard. Ally on landing → troops return. `recall_boats(target?)`: every boat at sea (or those sailing at `target`) turns back to my nearest shore and lands 75% of its troops (`cancel_boat`, 25% malus). Targets: `reachableByBoat` ids; dropped without a water route.
 - Port trade: every 10 ticks one roll per level, chance `1 / floor(100 / (misses+1) / base)`, base ≈1 under ~200 trade ships worldwide, 0.5 at 400, ~0 by 600 (`tradeShipSpawnRate`): ≈1 ship / 120 ticks per level early. Destination: a random non-embargoed player's Port on the same water. Arrival pays BOTH port owners in full `75,000 / (1 + e^(−0.03 × (dist − 300))) + 50 × dist` (`tradeShipGold`, dist = route length): 100 → 5.2k, 300 → 52.5k, 600 → 105k, 1000 → 125k. No partner Port → no ships; tribes keep no structures, so partners are AIs.
 - Warship: 1,000 HP; hunts within 130 tiles (`warshipTargettingRange`): transports first (no reload), then warships, then trade ships within its 100-tile patrol; shells 200–300 per 20 ticks; a captured trade ship pays its whole payout to the captor.
 
@@ -75,7 +75,7 @@ A blast covering ≥100 weighted tiles (inner 1, outer 0.5) of an ally's land or
 - `ally(target)`: offer to any visible id, expires after 200 ticks (`allianceRequestDuration`); 300-tick cooldown before re-asking (`allianceRequestCooldown`); `accept_alliance` sends the offer back. Lasts 3,000 ticks = 5 min (`allianceDuration`), expires silently. `extend_alliance(target)`: once BOTH sides have called it, expiry resets to now + 3,000 (`AllianceExtensionExecution`; no time window, the remaining time is not added, so renew in the last 300 ticks); a tribe answers within its next act tick (40–80 ticks); `me.allianceExpiry[].theyAgreedToExtend` = they already asked, `iAgreedToExtend` = you did. Allied: attacks blocked both ways (one in flight retreats, no malus), temporary embargoes lifted, trains pay the ally rate; no shared vision or income.
 - `break_alliance`: traitor 300 ticks (`traitorDuration`), `betrayals` +1 forever; no mark if the other side is already a traitor. Traitor: §3 multipliers against me; each bordering tribe attacks me at 1-in-3 odds per attack tick (1-in-6 if allied, breaking it).
 - Tribes (`kind: "tribe"`, 120 bots): act every 40–80 ticks; accept every alliance and extension request; never build (they delete structures they capture); expand while free land borders them; retaliate FIRST against their largest non-allied attacker regardless of troops; hunt a bordering traitor with 1/3 odds and break their own alliance with an allied traitor with 1/6 odds; otherwise attack only at ≥50–60% of cap, sending everything above a 30–40% reserve, skipping AI neighbours half the time; can boat. Weak on paper: cap ÷3, regen ×0.5, attacker losses ×0.7 against them. Conquered → all their gold (50/tick ≈ 30k per minute alive).
-- Embargoes, donations, target calls: no tool.
+- `donate(target, troops|gold)`: allies only; one donation per ally per 100 ticks, gold and troops share the cooldown (`donateCooldown`); troops capped at the room under their cap and at my stock; their relation to me +50 for ≥ ~1/12 of their cap in troops, +5 per 2,500 gold (chunk grows ~×2 per 5 min), max +100 (`DonateTroopsExecution`, `DonateGoldExecution`). Embargoes, target calls: no tool.
 
 ## 8. Losing land without a fight
 
@@ -96,6 +96,8 @@ Read-only: `rules` (this manual), `observe`, `inspect_player(id)` (`ObsNeighbor`
 | `accept_alliance`, `reject_alliance` | `target` | id in `pendingAllianceRequestsFrom` | alliance / rejection | no pending request |
 | `break_alliance` | `target` | id in `me.allies` | §7 | not your ally |
 | `extend_alliance` | `target` | id in `me.allies`, not yet asked by me | renew flag; both flags → +5 min from now (§7) | not your ally; already asked |
+| `donate` | `target`, `troops` or `gold` | id in `me.allies`; 100 ticks since my last gift to them | §7 | not your ally; cooldown; both/neither amount; they are at cap |
+| `recall_boats` | `target?` | `boatsInFlight` > 0 | boats turn home, 75% land (§4) | no boat at sea; none sailing at target |
 | `build` | `unit`, `at?` | unit in `canBuild`; `at` visible id or `"sea"` | new structure (§5) | `build[unit].note`; no spot 15 from others; no border with `at`; no coast |
 | `retreat` | `target?` | a running attack (none = all, expands too) | survivors home, −25% vs a player, 0% vs unclaimed | no attack running |
 | `nuke` | `target`, `nuke` | `nukes.silos` > 0, `nuke` in `nukes.affordable`, not allied | §6 | no silo; unaffordable; allied; no ready silo or immunity; target owns no land |
