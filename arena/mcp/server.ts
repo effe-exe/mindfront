@@ -69,7 +69,7 @@ const RATIO_DESC =
 
 const UNIT_EFFECTS: Record<BuildableUnit, string> = {
   City: "Raises your troop cap by 250k per level once finished (20 ticks). Upgrade with the upgrade tool instead of building a second one when space is tight.",
-  Port: "Trade ships (gold from another LLM's Port on the same sea) and Warships. Boats do NOT need a Port: they launch from any shore tile you own.",
+  Port: "Trade ships and Warships. A Port pays only with a partner Port on the same sea (another AI player's; tribes keep none): observe.me.tradePartnerPorts counts them. Boats do NOT need a Port: they launch from any shore tile you own.",
   "Defense Post":
     "Multiplies attacker losses x5 and slows them x3 on your tiles within 30 tiles of it.",
   "Missile Silo":

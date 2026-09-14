@@ -91,6 +91,8 @@ interface Sample {
   tick: number;
   tiles: number;
   goldEarned: number;
+  tradeGold: number;
+  trainGold: number;
 }
 /** smallID -> last ~7 samples. Module-level: one sim per process. */
 const history = new Map<number, Sample[]>();
@@ -112,22 +114,88 @@ export function trackHistory(game: Game): void {
       tick,
       tiles: p.numTilesOwned(),
       goldEarned: Number(p.goldEarned()),
+      tradeGold: Number(p.tradeGold()),
+      trainGold: Number(p.trainGold()),
     });
     if (arr.length > HISTORY_LEN) arr.shift();
   }
 }
 
 /** Growth over the last minute, extrapolated from whatever history exists. */
-function deltas(p: Player, tick: number): { tiles: number; gold: number } {
+function deltas(
+  p: Player,
+  tick: number,
+): { tiles: number; gold: number; trade: number; train: number } {
   const arr = history.get(p.smallID());
-  if (arr === undefined || arr.length === 0) return { tiles: 0, gold: 0 };
+  const none = { tiles: 0, gold: 0, trade: 0, train: 0 };
+  if (arr === undefined || arr.length === 0) return none;
   const span = tick - arr[0].tick;
-  if (span <= 0) return { tiles: 0, gold: 0 };
+  if (span <= 0) return none;
   const scale = TICKS_PER_MIN / span;
   return {
     tiles: Math.round((p.numTilesOwned() - arr[0].tiles) * scale),
     gold: Math.round((Number(p.goldEarned()) - arr[0].goldEarned) * scale),
+    trade: Math.round((Number(p.tradeGold()) - arr[0].tradeGold) * scale),
+    train: Math.round((Number(p.trainGold()) - arr[0].trainGold) * scale),
   };
+}
+
+// ---------- water ----------
+
+/** Water bodies touching a player's shore border tiles (≤300 sampled across
+ * the border) and whether any of them is ocean. Memoised on the border and
+ * water versions: every player is asked on every observe. */
+const shoreMemo = new Map<number, { tiles: number; water: number; ocean: boolean; comps: Set<number> }>();
+function shoreWater(game: Game, p: Player): { ocean: boolean; comps: Set<number> } {
+  const tiles = p.tileChangeVersion();
+  const water = game.map().waterVersion();
+  const hit = shoreMemo.get(p.smallID());
+  if (hit !== undefined && hit.tiles === tiles && hit.water === water) return hit;
+  const border = p.borderTiles();
+  const stride = Math.max(1, Math.floor(border.size / 300));
+  let ocean = false;
+  const comps = new Set<number>();
+  let i = 0;
+  for (const t of border) {
+    if (i++ % stride !== 0 || !game.isShore(t)) continue;
+    if (game.isOceanShore(t)) ocean = true;
+    const c = game.getWaterComponent(t);
+    if (c !== null) comps.add(c);
+  }
+  const entry = { tiles, water, ocean, comps };
+  shoreMemo.set(p.smallID(), entry);
+  return entry;
+}
+
+/** PortExecution.tradingPorts: a trade ship sails only to another player's Port
+ * (no embargo either way) on a water component touching my Port. */
+function tradePartnerPorts(game: Game, me: Player): number {
+  const comps = new Set<number>();
+  const myPorts = me.units(UnitType.Port);
+  if (myPorts.length === 0) {
+    for (const c of shoreWater(game, me).comps) comps.add(c);
+  }
+  for (const port of myPorts) {
+    for (const n of game.neighbors(port.tile())) {
+      if (!game.isWater(n)) continue;
+      const c = game.getWaterComponent(n);
+      if (c !== null) comps.add(c);
+    }
+  }
+  if (comps.size === 0) return 0;
+  let n = 0;
+  for (const p of game.players()) {
+    if (p === me || !p.canTrade(me)) continue;
+    for (const port of p.units(UnitType.Port)) {
+      for (const c of comps) {
+        if (game.hasWaterComponent(port.tile(), c)) {
+          n++;
+          break;
+        }
+      }
+    }
+  }
+  return n;
 }
 
 // ---------- geometry ----------
@@ -352,6 +420,7 @@ export function observe(
   const buildCosts = {} as Record<BuildableUnit, number>;
   const build = {} as Obs["build"];
   const ownShore = hasCoast(game, me);
+  const partnerPorts = tradePartnerPorts(game, me);
   // Warships launch from a finished Port only (PlayerImpl.canBuildUnitType).
   const ports = me.units(UnitType.Port).filter((u) => !u.isUnderConstruction()).length;
   const ownsLand = me.numTilesOwned() > 0;
@@ -364,7 +433,7 @@ export function observe(
     // your land tiles (kept apart from your other structures).
     const [placeable, where] =
       unit === "Port"
-        ? [ownShore, ownShore ? "on one of your coastal tiles" : "needs a coastal tile you own; you have none"]
+        ? [ownShore, ownShore ? `on one of your coastal tiles; pays only via another player's Port on the same water: ${partnerPorts} such Port${partnerPorts === 1 ? "" : "s"} now` : "needs a coastal tile you own; you have none"]
         : unit === "Warship"
           ? [ports > 0, ports > 0 ? "launched from one of your Ports" : "needs a Port; you have none"]
           : [ownsLand, "on any of your land tiles, spaced away from your other structures"];
@@ -495,6 +564,13 @@ export function observe(
       troopsPct:
         myMaxTroops > 0 ? Math.round((me.troops() / myMaxTroops) * 100) : 0,
       goldIncomePerMin: myDeltas.gold,
+      income: {
+        baseGold: Number(cfg.goldAdditionRate(me)) * TICKS_PER_MIN,
+        tradeGold: myDeltas.trade,
+        trainGold: myDeltas.train,
+        lootGold: Math.max(0, myDeltas.gold - Number(cfg.goldAdditionRate(me)) * TICKS_PER_MIN - myDeltas.trade - myDeltas.train),
+      },
+      tradePartnerPorts: partnerPorts,
       tilesDelta1m: myDeltas.tiles,
       immuneUntilTick:
         immunityTicksLeft > 0 ? Math.round(tick + immunityTicksLeft) : 0,

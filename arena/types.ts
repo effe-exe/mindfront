@@ -132,8 +132,12 @@ export interface Obs {
     maxTroops: number;
     /** troops as a percentage of my cap */
     troopsPct: number;
-    /** gold earned over the last minute */
+    /** gold earned over the last minute, all sources */
     goldIncomePerMin: number;
+    /** gold per minute by source: flat worker income; trade ships; trains; the rest (conquest loot, captured trade ships, gifts) */
+    income: { baseGold: number; tradeGold: number; trainGold: number; lootGold: number };
+    /** Ports of other players (no embargo either way) on a water body touching one of my Ports, or my shore if I have none: 0 = a Port earns nothing */
+    tradePartnerPorts: number;
     /** tiles gained (or lost) over the last minute */
     tilesDelta1m: number;
     /** tick my spawn immunity ends; 0 when it is already over */

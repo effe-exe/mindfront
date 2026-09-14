@@ -412,6 +412,8 @@ if (
       maxTroops: 10_000,
       troopsPct: 10,
       goldIncomePerMin: 100,
+      income: { baseGold: 60000, tradeGold: 0, trainGold: 0, lootGold: 0 },
+      tradePartnerPorts: 0,
       tilesDelta1m: 20,
       immuneUntilTick: 0,
       isTraitor: false,

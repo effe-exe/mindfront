@@ -216,6 +216,36 @@ describe("arena/observe", () => {
   });
 });
 
+describe("arena/observe trade partners", () => {
+  test("tradePartnerPorts counts another player's Port on my water", async () => {
+    const g = await setup(
+      "half_land_half_ocean",
+      { infiniteGold: true, instantBuild: true, infiniteTroops: true },
+      [playerInfo("player1", PlayerType.Human), playerInfo("player2", PlayerType.Human)],
+    );
+    const p1 = g.player("player1");
+    const p2 = g.player("player2");
+    // 16x16 map, land on the left half: two coastal blobs on rows 2 and 12
+    const coast =
+      [...Array(g.width()).keys()].find((x) => g.isWater(g.ref(x, 2)))! - 1;
+    for (let x = coast - 2; x <= coast; x++) p1.conquer(g.ref(x, 2));
+    for (let x = coast - 2; x <= coast; x++) p2.conquer(g.ref(x, 12));
+    p1.buildUnit(UnitType.Port, g.ref(coast, 2), {});
+
+    let obs = observe(g, p1, ctx(p1), []);
+    expect(obs.me.tradePartnerPorts).toBe(0);
+    expect(obs.build.Port.note).toMatch(/0 such Ports/);
+    expect(obs.me.income.baseGold).toBeGreaterThan(0);
+    expect(obs.me.income.tradeGold).toBe(0);
+
+    p2.buildUnit(UnitType.Port, g.ref(coast, 12), {});
+    obs = observe(g, p1, ctx(p1), []);
+    expect(obs.me.tradePartnerPorts).toBe(1);
+    // a player without a Port still learns whether one would pay
+    expect(observe(g, p2, ctx(p2), []).me.tradePartnerPorts).toBe(1);
+  });
+});
+
 describe("arena/observe build Warship", () => {
   test("translates build Warship into a build_unit intent on water near a Port", async () => {
     const g = await setup(
