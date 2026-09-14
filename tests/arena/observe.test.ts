@@ -295,7 +295,8 @@ describe("arena/observe trade partners", () => {
 
     let obs = observe(g, p1, ctx(p1), []);
     expect(obs.me.tradePartnerPorts).toBe(0);
-    expect(obs.build.Port.note).toMatch(/0 such Ports/);
+    expect(obs.build.Port.note).toMatch(/0 partner Ports now, 1 AI player on your sea/);
+    expect(obs.me.aiOnMySea).toBe(1);
     expect(obs.me.income.baseGold).toBeGreaterThan(0);
     expect(obs.me.income.tradeGold).toBe(0);
 

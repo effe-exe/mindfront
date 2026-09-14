@@ -70,7 +70,7 @@ const RATIO_DESC =
 
 const UNIT_EFFECTS: Record<BuildableUnit, string> = {
   City: "Raises your troop cap by 250k per level once finished (20 ticks). Upgrade with the upgrade tool instead of building a second one when space is tight.",
-  Port: "Trade ships and Warships. A Port pays only with a partner Port on the same sea (another AI player's; tribes keep none): observe.me.tradePartnerPorts counts them. Boats do NOT need a Port: they launch from any shore tile you own.",
+  Port: "Trade ships and Warships. Trade ships sail to another AI player's Port on the same sea (tribes keep none) and every arrival pays BOTH owners, ~52k per ship at 300 tiles, ~4 ships per minute per Port: a trade pair earns ~400k/min each, 7x the base income. observe.me.tradePartnerPorts = partner Ports now, observe.me.aiOnMySea = AI players who become partners as soon as they build one. Boats do NOT need a Port: they launch from any shore tile you own.",
   "Defense Post":
     "Multiplies attacker losses x5 and slows them x3 on your tiles within 30 tiles of it.",
   "Missile Silo":
@@ -80,7 +80,7 @@ const UNIT_EFFECTS: Record<BuildableUnit, string> = {
   Factory:
     "No direct gold: it builds the rail network, and trains from it pay gold at every City or Port they stop at.",
   Warship:
-    "Needs one of your Ports; spawns on the water next to it. Hunts enemy transport boats and trade ships, shells the coast.",
+    "Needs one of your Ports; spawns on the water next to it. Within 130 tiles it sinks enemy transport boats in one shell (everyone aboard dies) and captures enemy trade ships, whose whole payout then goes to you: coastal defence and piracy income in one unit.",
 };
 
 const ATTACK_MATH = [

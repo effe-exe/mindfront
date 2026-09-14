@@ -142,6 +142,8 @@ export interface Obs {
     income: { baseGold: number; tradeGold: number; trainGold: number; lootGold: number };
     /** Ports of other players (no embargo either way) on a water body touching one of my Ports, or my shore if I have none: 0 = a Port earns nothing */
     tradePartnerPorts: number;
+    /** living AI players whose shore touches a water body mine does: trade partners as soon as they build a Port */
+    aiOnMySea: number;
     /** tiles gained (or lost) over the last minute */
     tilesDelta1m: number;
     /** tick my spawn immunity ends; 0 when it is already over */

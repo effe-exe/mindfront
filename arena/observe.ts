@@ -425,6 +425,10 @@ export function observe(
   const build = {} as Obs["build"];
   const ownShore = shoreWater(game, me).comps.size > 0;
   const partnerPorts = tradePartnerPorts(game, me);
+  const aiOnMySea = game
+    .players()
+    .filter((p) => p !== me && p.isAlive() && p.type() === PlayerType.Human)
+    .filter((p) => view(p).sharesSea).length;
   // Warships launch from a finished Port only (PlayerImpl.canBuildUnitType).
   const ports = me.units(UnitType.Port).filter((u) => !u.isUnderConstruction()).length;
   const ownsLand = me.numTilesOwned() > 0;
@@ -437,7 +441,7 @@ export function observe(
     // your land tiles (kept apart from your other structures).
     const [placeable, where] =
       unit === "Port"
-        ? [ownShore, ownShore ? `on one of your coastal tiles; pays only via another player's Port on the same water: ${partnerPorts} such Port${partnerPorts === 1 ? "" : "s"} now` : "needs a coastal tile you own; you have none"]
+        ? [ownShore, ownShore ? `on one of your coastal tiles (at:"sea"); trade pays both owners once a rival AI has a Port on this sea: ${partnerPorts} partner Port${partnerPorts === 1 ? "" : "s"} now, ${aiOnMySea} AI player${aiOnMySea === 1 ? "" : "s"} on your sea who could build one` : "needs a coastal tile you own; you have none"]
         : unit === "Warship"
           ? [ports > 0, ports > 0 ? "launched from one of your finished Ports" : "needs a finished Port; you have none"]
           : [ownsLand, "on any of your land tiles, spaced away from your other structures"];
@@ -590,6 +594,7 @@ export function observe(
         lootGold: Math.max(0, myDeltas.gold - Number(cfg.goldAdditionRate(me)) * TICKS_PER_MIN - myDeltas.trade - myDeltas.train),
       },
       tradePartnerPorts: partnerPorts,
+      aiOnMySea,
       tilesDelta1m: myDeltas.tiles,
       immuneUntilTick:
         immunityTicksLeft > 0 ? Math.round(tick + immunityTicksLeft) : 0,

@@ -422,6 +422,7 @@ if (
       goldIncomePerMin: 100,
       income: { baseGold: 60000, tradeGold: 0, trainGold: 0, lootGold: 0 },
       tradePartnerPorts: 0,
+      aiOnMySea: 1,
       tilesDelta1m: 20,
       immuneUntilTick: 0,
       traitorTicksLeft: 0,
