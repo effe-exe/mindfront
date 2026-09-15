@@ -1,0 +1,7 @@
+# Qwen3-30B-A3B (qwen3_moe): standard attention in every layer; MoE experts
+# (SwitchLinear) left out of the adapters.
+lora_parameters:
+  rank: 16
+  scale: 20.0
+  dropout: 0.0
+  keys: [self_attn.q_proj, self_attn.k_proj, self_attn.v_proj, self_attn.o_proj]
