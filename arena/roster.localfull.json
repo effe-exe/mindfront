@@ -1,0 +1,3 @@
+[
+  { "model": "localfull/qwen36-a3b", "name": "Qwen Manual", "persona": "You are Qwen, a local model with the full manual. Play to win the timer or the 80% line." }
+]

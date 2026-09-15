@@ -8,8 +8,10 @@
 //   cd ~/mindfront-replay && npx tsx arena/local/dataset.ts ~/mindfront/arena/records/human --out ~/mindfront/arena/local/data
 //
 // Flags: --out DIR  --max-games N  --window 50  --keep 3 (top finishers per game)  --valid 0.05  --idle 0.1
+import { spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
+import readline from "readline";
 import { Config } from "../../src/core/configuration/Config";
 import { Executor } from "../../src/core/execution/ExecutionManager";
 import { PlayerInfo, PlayerType, UnitType, type Game, type Player } from "../../src/core/game/Game";
@@ -246,7 +248,7 @@ async function replayRecord(file: string): Promise<{ examples: Example[]; synced
     new Executor(game, gameStart.gameID, undefined, gameStart.tribes?.map((t) => t.name)),
     (gu) => {
       if ("errMsg" in gu) {
-        fatal = gu.errMsg;
+        fatal = `${gu.errMsg}\n${(gu as { stack?: string }).stack ?? ""}`;
         return;
       }
       for (const hu of gu.updates[GameUpdateType.Hash] as HashUpdate[]) computed.set(hu.tick, hu.hash);
@@ -309,42 +311,52 @@ async function replayRecord(file: string): Promise<{ examples: Example[]; synced
   return { examples: examples.filter((e) => (e.messages[2] as { tool_calls?: unknown[] }).tool_calls?.length !== 0), synced, ticks: game.ticks() };
 }
 
+// The engine keeps module-level caches that survive one game and crash the next
+// ("_borderTiles of undefined" at tick 1), so a directory is processed one
+// record per child process; a single file is processed in this process.
 async function main() {
   console.debug = () => {};
   fs.mkdirSync(outDir, { recursive: true });
-  const files = fs.readdirSync(recordsDir).filter((f) => f.endsWith(".json") && !f.includes(".seats")).slice(0, maxGames);
-  const train = fs.createWriteStream(path.join(outDir, "train.jsonl"));
-  const valid = fs.createWriteStream(path.join(outDir, "valid.jsonl"));
-  let nTrain = 0;
-  let nValid = 0;
-  let chars = 0;
-  const toolCounts = new Map<string, number>();
-  for (const [i, f] of files.entries()) {
-    const t0 = Date.now();
-    let res: Awaited<ReturnType<typeof replayRecord>>;
-    try {
-      res = await replayRecord(path.join(recordsDir, f));
-    } catch (err) {
-      console.warn(`${f}: ${String(err).slice(0, 200)}`);
-      continue;
+  if (fs.statSync(recordsDir).isDirectory()) {
+    const files = fs.readdirSync(recordsDir).filter((f) => f.endsWith(".json") && !f.includes(".seats")).slice(0, maxGames);
+    for (const name of ["train.jsonl", "valid.jsonl"]) fs.writeFileSync(path.join(outDir, name), "");
+    for (const [i, f] of files.entries()) {
+      process.stdout.write(`${i + 1}/${files.length} `);
+      const r = spawnSync("npx", ["tsx", process.argv[1], path.join(recordsDir, f), ...process.argv.slice(3)], { stdio: ["ignore", "inherit", "ignore"] });
+      if (r.status !== 0) console.log(`${f}: child exited ${r.status}`);
     }
-    const sink = Math.random() < VALID ? valid : train;
-    for (const e of res.examples) {
-      const line = JSON.stringify(e);
-      chars += line.length;
-      sink.write(line + "\n");
-      for (const tc of ((e.messages[2] as { tool_calls?: { function: { name: string } }[] }).tool_calls ?? [])) {
-        toolCounts.set(tc.function.name, (toolCounts.get(tc.function.name) ?? 0) + 1);
+    // Files run to hundreds of MB: count by streaming, never one big string.
+    const count = async (name: string) => {
+      let lines = 0;
+      let chars = 0;
+      const toolCounts = new Map<string, number>();
+      for await (const line of readline.createInterface({ input: fs.createReadStream(path.join(outDir, name)) })) {
+        if (!line) continue;
+        lines++;
+        chars += line.length;
+        for (const tc of ((JSON.parse(line) as Example).messages[2] as { tool_calls?: { function: { name: string } }[] }).tool_calls ?? []) {
+          toolCounts.set(tc.function.name, (toolCounts.get(tc.function.name) ?? 0) + 1);
+        }
       }
-    }
-    if (sink === valid) nValid += res.examples.length;
-    else nTrain += res.examples.length;
-    console.log(`${i + 1}/${files.length} ${f} ${res.synced ? "in sync" : "DIVERGED"} ticks=${res.ticks} examples=${res.examples.length} ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+      return { lines, chars, toolCounts };
+    };
+    const train = await count("train.jsonl");
+    console.log(`train=${train.lines} valid=${(await count("valid.jsonl")).lines} ≈${Math.round(train.chars / 3.5 / 1000)}k tokens`);
+    console.log([...train.toolCounts].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}=${v}`).join(" "));
+    return;
   }
-  train.end();
-  valid.end();
-  console.log(`train=${nTrain} valid=${nValid} ≈${Math.round(chars / 3.5 / 1000)}k tokens`);
-  console.log([...toolCounts].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}=${v}`).join(" "));
+  const f = path.basename(recordsDir);
+  const t0 = Date.now();
+  let res: Awaited<ReturnType<typeof replayRecord>>;
+  try {
+    res = await replayRecord(recordsDir);
+  } catch (err) {
+    console.log(`${f}: ${String(err).slice(0, 200)}`);
+    return;
+  }
+  const sink = path.join(outDir, Math.random() < VALID ? "valid.jsonl" : "train.jsonl");
+  fs.appendFileSync(sink, res.examples.map((e) => JSON.stringify(e) + "\n").join(""));
+  console.log(`${f} ${res.synced ? "in sync" : "DIVERGED"} ticks=${res.ticks} examples=${res.examples.length} ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
 void main();

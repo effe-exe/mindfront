@@ -90,16 +90,18 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   const fetchImpl = opts.fetchImpl ?? fetch;
 
   const listed = await client.listTools();
-  // "local/..." seats: a fine-tuned model on the sidecar, short prompt and
-  // one-line tool descriptions (the manual is baked in by training), no
-  // briefing, no OpenRouter-only fields.
-  const local = model.startsWith(LOCAL_MODEL_PREFIX);
+  // "local/..." seats: a fine-tuned model on the local server, short prompt,
+  // one-line tool descriptions and a compact observation (the manual is baked
+  // in by training), no briefing, no OpenRouter-only fields. "localfull/..."
+  // = the same transport with the full manual: the untuned baseline.
+  const local = model.startsWith(LOCAL_MODEL_PREFIX) || model.startsWith("localfull/");
+  const shortPrompt = model.startsWith(LOCAL_MODEL_PREFIX);
   const tools: OpenAiTool[] = listed.tools.map((t) => ({
     type: "function",
-    function: { name: t.name, description: local ? shortDescription(t.description) : t.description, parameters: local ? slimParameters(t.inputSchema) : t.inputSchema },
+    function: { name: t.name, description: shortPrompt ? shortDescription(t.description) : t.description, parameters: shortPrompt ? slimParameters(t.inputSchema) : t.inputSchema },
   }));
   const ctxLike = { model, name, persona } as PlayerCtx;
-  const baseSystemPrompt = local ? localSystemPrompt(persona) :
+  const baseSystemPrompt = shortPrompt ? localSystemPrompt(persona) :
     systemPrompt(ctxLike) +
     "\nYou act by calling tools. While observe reports phase \"spawn\", pick your start with `spawn(col,row)` from the grid it shows (consider where others already are), then wait for the match. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act. Do not narrate: tool calls are the only output that matters. Stop calling tools when you are done for this round.";
 
@@ -184,7 +186,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
         await sleep(2000, signal);
         continue;
       }
-      if (local && obsObj?.me !== undefined) obsObj = compactObs(obsObj);
+      if (shortPrompt && obsObj?.me !== undefined) obsObj = compactObs(obsObj);
       obsObj.plan = plan;
       obsObj.lastResult = lastResult;
 
@@ -205,7 +207,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
             "X-Title": "MindFront",
           },
           body: JSON.stringify({
-            model,
+            // mlx_lm.server serves the model it was started with under "default_model"
+            model: local ? "default_model" : model,
             max_tokens: 1500,
             ...(local
               ? {}
