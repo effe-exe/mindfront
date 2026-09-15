@@ -1,0 +1,19 @@
+# LoRA targets for Qwen3.6-35B-A3B (hybrid: 3/4 of the layers are gated
+# delta-net "linear_attn", 1/4 full attention; the MoE experts are
+# SwitchLinear, whose routing gather has no gradient w.r.t. indices in
+# mlx-lm 0.31, so they are left out). Shared expert MLP is a plain Linear.
+lora_parameters:
+  rank: 16
+  scale: 20.0
+  dropout: 0.0
+  keys:
+    - self_attn.q_proj
+    - self_attn.k_proj
+    - self_attn.v_proj
+    - self_attn.o_proj
+    - linear_attn.in_proj_qkv
+    - linear_attn.in_proj_z
+    - linear_attn.out_proj
+    - mlp.shared_expert.gate_proj
+    - mlp.shared_expert.up_proj
+    - mlp.shared_expert.down_proj

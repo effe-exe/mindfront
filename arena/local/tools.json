@@ -2,80 +2,6 @@
  {
   "type": "function",
   "function": {
-   "name": "rules",
-   "description": "The full MindFront game manual: goal and win rules, the clock, troop and gold economy, how attacks resolve, sea and structures, diplomacy, every tool, and ho...",
-   "parameters": {
-    "type": "object",
-    "properties": {}
-   }
-  }
- },
- {
-  "type": "function",
-  "function": {
-   "name": "observe",
-   "description": "Your current view of the world as JSON: your tiles/troops/troop cap/gold/income/structures/map position, bordering neighbors (ids, relation, alliances, their...",
-   "parameters": {
-    "type": "object",
-    "properties": {}
-   }
-  }
- },
- {
-  "type": "function",
-  "function": {
-   "name": "inspect_player",
-   "description": "Full dossier on one player you can currently see (a neighbor, ally, attacker, leaderboard or boat-reachable id from observe): tiles, troops and troop cap, go...",
-   "parameters": {
-    "type": "object",
-    "properties": {
-     "id": {
-      "type": "integer",
-      "description": "smallID from observe"
-     }
-    },
-    "required": [
-     "id"
-    ]
-   }
-  }
- },
- {
-  "type": "function",
-  "function": {
-   "name": "game_info",
-   "description": "The match constants that never change mid-game: map and size, land tiles, clock, win rule, alliance and immunity timers, defense post range, what every struc...",
-   "parameters": {
-    "type": "object",
-    "properties": {}
-   }
-  }
- },
- {
-  "type": "function",
-  "function": {
-   "name": "map_overview",
-   "description": "A coarse text map of the whole world: a grid where each cell names the player holding most of it, plus a legend with each player's cell coordinates.",
-   "parameters": {
-    "type": "object",
-    "properties": {
-     "cols": {
-      "type": "integer",
-      "minimum": 2,
-      "maximum": 24
-     },
-     "rows": {
-      "type": "integer",
-      "minimum": 2,
-      "maximum": 12
-     }
-    }
-   }
-  }
- },
- {
-  "type": "function",
-  "function": {
    "name": "expand",
    "description": "Claim adjacent unclaimed land: 16/20/24 troops per plains/highland/mountain tile, no malus, survivors return when the front runs out.",
    "parameters": {
@@ -372,32 +298,6 @@
     },
     "required": [
      "unit"
-    ]
-   }
-  }
- },
- {
-  "type": "function",
-  "function": {
-   "name": "spawn",
-   "description": "Spawn phase only: choose (or change) where you start.",
-   "parameters": {
-    "type": "object",
-    "properties": {
-     "col": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 23
-     },
-     "row": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 11
-     }
-    },
-    "required": [
-     "col",
-     "row"
     ]
    }
   }

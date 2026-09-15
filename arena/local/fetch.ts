@@ -1,6 +1,6 @@
 // Download archived public FFA games (full records with every intent) from the
 // OpenFront public API into arena/records/human/<gameID>.json.
-//   npx tsx arena/local/fetch.ts [--days 14] [--max 300] [--min-players 8] [--out arena/records/human]
+//   npx tsx arena/local/fetch.ts [--days 14] [--max 300] [--min-players 8] [--map <mapName>] [--out arena/records/human]
 // Listing windows are capped at 2 days by the API; records are fetched one per
 // second to stay polite. Existing files are skipped, so re-runs only add.
 import fs from "fs";
@@ -14,6 +14,7 @@ const arg = (name: string, dflt: string) => {
 const days = Number(arg("--days", "14"));
 const max = Number(arg("--max", "300"));
 const minPlayers = Number(arg("--min-players", "8"));
+const mapName = arg("--map", "");
 const out = arg("--out", "arena/records/human");
 fs.mkdirSync(out, { recursive: true });
 
@@ -22,7 +23,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function listWindow(start: Date, end: Date): Promise<{ game: string; numPlayers: number; start: string }[]> {
   const games: { game: string; numPlayers: number; start: string }[] = [];
   for (let offset = 0; ; offset += 1000) {
-    const url = `${API}/games?start=${start.toISOString()}&end=${end.toISOString()}&type=Public&mode=${encodeURIComponent("Free For All")}&limit=1000&offset=${offset}`;
+    const mapParam = mapName ? `&gameMap=${encodeURIComponent(mapName)}` : "";
+    const url = `${API}/games?start=${start.toISOString()}&end=${end.toISOString()}&type=Public&mode=${encodeURIComponent("Free For All")}&limit=1000&offset=${offset}${mapParam}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
     const page = (await res.json()) as { game: string; numPlayers: number; start: string }[];

@@ -9,7 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { systemPrompt } from "./decide";
-import { LOCAL_MODEL_PREFIX, compactObs, localSystemPrompt, shortDescription, slimParameters } from "./local/prompt";
+import { LOCAL_MODEL_PREFIX, LOCAL_TOOLS, compactObs, localSystemPrompt, shortDescription, slimParameters } from "./local/prompt";
 import type { PlayerCtx } from "./types";
 
 /** models whose providers reject the `reasoning` parameter (learned at runtime) */
@@ -96,7 +96,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
   // = the same transport with the full manual: the untuned baseline.
   const local = model.startsWith(LOCAL_MODEL_PREFIX) || model.startsWith("localfull/");
   const shortPrompt = model.startsWith(LOCAL_MODEL_PREFIX);
-  const tools: OpenAiTool[] = listed.tools.map((t) => ({
+  const tools: OpenAiTool[] = listed.tools.filter((t) => !shortPrompt || LOCAL_TOOLS.has(t.name)).map((t) => ({
     type: "function",
     function: { name: t.name, description: shortPrompt ? shortDescription(t.description) : t.description, parameters: shortPrompt ? slimParameters(t.inputSchema) : t.inputSchema },
   }));

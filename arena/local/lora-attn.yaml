@@ -1,0 +1,5 @@
+lora_parameters:
+  rank: 16
+  scale: 20.0
+  dropout: 0.0
+  keys: [self_attn.q_proj, self_attn.k_proj, self_attn.v_proj, self_attn.o_proj]

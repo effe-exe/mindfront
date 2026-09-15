@@ -34,3 +34,4 @@ arena/local/data/
 arena/local/adapters/
 arena/local/.venv/
 arena/local/models/
+.aider*

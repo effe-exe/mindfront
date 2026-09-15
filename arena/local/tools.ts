@@ -6,14 +6,14 @@ import path from "path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createArenaServer } from "../mcp/server";
-import { shortDescription, slimParameters } from "./prompt";
+import { LOCAL_TOOLS, shortDescription, slimParameters } from "./prompt";
 
 async function main() {
   const { server } = createArenaServer({ game: () => null as never, seats: new Map(), onEvent: () => {}, rules: "" });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "tools-dump", version: "0" });
   await Promise.all([server.connect(st), client.connect(ct)]);
-  const tools = (await client.listTools()).tools.map((t) => ({
+  const tools = (await client.listTools()).tools.filter((t) => LOCAL_TOOLS.has(t.name)).map((t) => ({
     type: "function",
     function: { name: t.name, description: shortDescription(t.description), parameters: slimParameters(t.inputSchema) },
   }));

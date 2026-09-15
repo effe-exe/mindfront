@@ -3,6 +3,15 @@
 // so that training and inference see the same text.
 export const LOCAL_MODEL_PREFIX = "local/";
 
+/** The trained seat only ever calls action tools (the player loop calls
+ * observe itself; the read-only helpers and spawn are not in the training
+ * labels), so it is not shown them: ~1.5k tokens less per round. */
+export const LOCAL_TOOLS = new Set([
+  "expand", "attack", "boat", "ally", "accept_alliance", "reject_alliance", "break_alliance",
+  "extend_alliance", "donate", "recall_boats", "embargo", "move_warship", "build", "upgrade",
+  "retreat", "nuke", "emoji", "chat",
+]);
+
 export function localSystemPrompt(persona: string): string {
   return (
     "You are a MindFront seat: a player in OpenFront, a real-time territory strategy game, " +
@@ -34,7 +43,8 @@ export function slimParameters(schema: unknown): unknown {
 }
 
 type Dossier = Record<string, unknown>;
-const FAR_FIELDS = ["id", "name", "kind", "tiles", "troops", "gold", "maxTroops", "relation", "relationToMe", "allied", "teammate", "sharesSea", "direction", "distance", "tilesDelta1m", "attacking", "attackedBy"];
+const FAR_FIELDS = ["id", "name", "kind", "tiles", "troops", "gold", "relationToMe", "allied", "teammate", "sharesSea", "direction", "distance", "tilesDelta1m"];
+const NEAR_DROP = new Set(["allies", "betrayals", "maxTroops", "coastal"]);
 function pick(d: Dossier, fields: string[]): Dossier {
   const out: Dossier = {};
   for (const f of fields) if (d[f] !== undefined) out[f] = d[f];
@@ -47,24 +57,26 @@ function nonZero(rec: unknown): unknown {
 
 /** The local seat's observation: the arena's `observe()` output with the long
  * tails cut (far dossiers to their essentials, ≤12 units, no prose notes,
- * zero-valued structure counts dropped). Applied identically at training
- * (arena/local/dataset.ts) and inference (arena/player.ts). ponytail: ~2k
- * tokens instead of ~5k; widen when a tuned seat provably misses something. */
+ * zero-valued structure counts dropped, no build table, far dossiers to 13
+ * fields). Applied identically at training (arena/local/dataset.ts) and
+ * inference (arena/player.ts). ponytail: ~1.5k tokens instead of ~5k; widen
+ * when a tuned seat provably misses something. */
 export function compactObs(obs: Record<string, unknown>): Record<string, unknown> {
   const o = { ...obs } as Record<string, unknown>;
   const me = { ...(o.me as Dossier) };
   delete me.bbox;
   me.structures = nonZero(me.structures);
   me.underConstruction = nonZero(me.underConstruction);
-  if (Array.isArray(me.units)) me.units = (me.units as Dossier[]).slice(0, 12);
+  if (Array.isArray(me.units)) me.units = (me.units as Dossier[]).slice(0, 8);
+  delete me.income;
   o.me = me;
-  o.neighbors = ((o.neighbors as Dossier[]) ?? []).map((n) => ({ ...n, structures: nonZero(n.structures) }));
-  o.reachableByBoat = ((o.reachableByBoat as Dossier[]) ?? []).slice(0, 5).map((n) => pick(n, FAR_FIELDS));
+  o.neighbors = ((o.neighbors as Dossier[]) ?? []).map((n) => {
+    const out: Dossier = {};
+    for (const [k, v] of Object.entries(n)) if (!NEAR_DROP.has(k)) out[k] = k === "structures" ? nonZero(v) : v;
+    return out;
+  });
+  o.reachableByBoat = ((o.reachableByBoat as Dossier[]) ?? []).slice(0, 4).map((n) => pick(n, FAR_FIELDS));
   o.leaderboard = ((o.leaderboard as Dossier[]) ?? []).map((n) => pick(n, FAR_FIELDS));
-  if (o.build && typeof o.build === "object") {
-    o.build = Object.fromEntries(
-      Object.entries(o.build as Record<string, Dossier>).map(([k, v]) => [k, { cost: v.cost, affordable: v.affordable, placeable: v.placeable, upgradable: v.upgradable }]),
-    );
-  }
+  delete o.build; // canBuild + buildCosts carry what the trained seat uses
   return o;
 }
