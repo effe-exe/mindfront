@@ -7,7 +7,7 @@
 // played on (arena/local/sync-worktree.sh copies this file there), e.g.
 //   cd ~/mindfront-replay && npx tsx arena/local/dataset.ts ~/mindfront/arena/records/human --out ~/mindfront/arena/local/data
 //
-// Flags: --out DIR  --max-games N  --window 50  --keep 3 (top finishers per game)  --valid 0.05  --idle 0.1
+// Flags: --out DIR  --max-games N  --window 50  --keep 3 (top finishers per game)  --valid 0.05  --idle 1 (share of empty windows kept)
 import { spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -40,7 +40,7 @@ const maxGames = Number(arg("--max-games", "1000000"));
 const WINDOW = Number(arg("--window", "50"));
 const KEEP = Number(arg("--keep", "3"));
 const VALID = Number(arg("--valid", "0.05"));
-const IDLE = Number(arg("--idle", "0.1"));
+const IDLE = Number(arg("--idle", "1"));
 const MAX_CALLS = 8;
 
 // The tool list the seat sees, taken from the arena's own MCP server so the
@@ -259,6 +259,7 @@ async function replayRecord(file: string): Promise<{ examples: Example[]; synced
   const keep = keptClientIDs(record);
   const examples: Example[] = [];
   const open = new Map<string, { until: number; obs: unknown; calls: ToolCall[] }>();
+  const lastIntent = new Map<string, number>();
   let synced = true;
   for (const turn of record.turns) {
     const tick = game.ticks();
@@ -276,6 +277,7 @@ async function replayRecord(file: string): Promise<{ examples: Example[]; synced
         if (!keep.has(intent.clientID)) continue;
         const me = game.playerByClientID(intent.clientID);
         if (me === null || !me.isAlive()) continue;
+        lastIntent.set(intent.clientID, tick);
         let w = open.get(intent.clientID);
         if (w === undefined) {
           w = { until: tick + WINDOW, obs: observe(game, me, ctxFor(me), [], []), calls: [] };
@@ -284,10 +286,12 @@ async function replayRecord(file: string): Promise<{ examples: Example[]; synced
         const call = label(game, me, intent);
         if (call !== null && w.calls.length < MAX_CALLS) w.calls.push(call);
       }
-      // A few "nothing to do" rounds so the model learns to end a round.
-      if (tick % 300 === 0) {
+      // Windows in which the human did nothing, at their true rate (about half
+      // of all windows for a winner): v1 trained on 5% idle rounds and fired
+      // attacks and boats every second until it was dead at 1:02.
+      if (tick % WINDOW === 0) {
         for (const cid of keep) {
-          if (open.has(cid) || Math.random() > IDLE) continue;
+          if (open.has(cid) || lastIntent.get(cid) === tick || Math.random() > IDLE) continue;
           const me = game.playerByClientID(cid);
           if (me === null || !me.isAlive()) continue;
           examples.push(example(observe(game, me, ctxFor(me), [], []), []));
