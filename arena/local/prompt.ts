@@ -42,8 +42,14 @@ export function slimParameters(schema: unknown): unknown {
 }
 
 type Dossier = Record<string, unknown>;
-const FAR_FIELDS = ["id", "name", "kind", "tiles", "troops", "gold", "relationToMe", "allied", "teammate", "sharesSea", "direction", "distance", "tilesDelta1m"];
-const NEAR_DROP = new Set(["allies", "betrayals", "maxTroops", "coastal"]);
+/** One of the seat's own recent calls, as the observation shows it (seconds ago). */
+export type RecentAction = { ago: number; name: string; args: Record<string, unknown> };
+export const RECENT_SECONDS = 10;
+const FAR_FIELDS = ["id", "name", "kind", "tiles", "troops", "gold", "relationToMe", "allied", "direction", "distance"];
+const NEAR_DROP = new Set(["allies", "betrayals", "maxTroops", "coastal", "relation", "teammate", "traitorTicksLeft", "distance", "sharesSea"]);
+const ME_DROP = new Set(["bbox", "income", "team", "center", "cities", "ports", "defensePosts", "silos", "immuneUntilTick", "traitorTicksLeft", "betrayals", "pendingRequestExpiry", "betrayalCascade", "underConstruction"]);
+// Constant in training (always empty or null there), so the trained seat never sees them.
+const TOP_DROP = ["game", "buildCosts", "nukes", "recentEvents", "globalEvents", "lastResult", "notes", "plan", "build"];
 function pick(d: Dossier, fields: string[]): Dossier {
   const out: Dossier = {};
   for (const f of fields) if (d[f] !== undefined) out[f] = d[f];
@@ -55,27 +61,29 @@ function nonZero(rec: unknown): unknown {
 }
 
 /** The local seat's observation: the arena's `observe()` output with the long
- * tails cut (far dossiers to their essentials, ≤12 units, no prose notes,
- * zero-valued structure counts dropped, no build table, far dossiers to 13
- * fields). Applied identically at training (arena/local/dataset.ts) and
- * inference (arena/player.ts). ponytail: ~1.5k tokens instead of ~5k; widen
+ * tails cut (≤8 neighbours without the derived fields, ≤3 far dossiers of 10
+ * fields, ≤6 units as id/type/x/y, zero-valued structure counts dropped, no
+ * build table / costs / events) plus the seat's own calls of the last
+ * RECENT_SECONDS. Applied identically at training (arena/local/dataset.ts) and
+ * inference (arena/player.ts). ponytail: ~1.3k tokens instead of ~5k; widen
  * when a tuned seat provably misses something. */
-export function compactObs(obs: Record<string, unknown>): Record<string, unknown> {
+export function compactObs(obs: Record<string, unknown>, recent: RecentAction[] = []): Record<string, unknown> {
   const o = { ...obs } as Record<string, unknown>;
-  const me = { ...(o.me as Dossier) };
-  delete me.bbox;
+  for (const k of TOP_DROP) delete o[k];
+  const me: Dossier = {};
+  for (const [k, v] of Object.entries(o.me as Dossier)) if (!ME_DROP.has(k)) me[k] = v;
   me.structures = nonZero(me.structures);
-  me.underConstruction = nonZero(me.underConstruction);
-  if (Array.isArray(me.units)) me.units = (me.units as Dossier[]).slice(0, 8);
-  delete me.income;
+  if (Array.isArray(me.units)) {
+    me.units = (me.units as Dossier[]).slice(0, 6).map((u) => ({ id: u.id, type: u.type, ...(Number(u.level) > 1 ? { level: u.level } : {}), x: u.x, y: u.y }));
+  }
   o.me = me;
-  o.neighbors = ((o.neighbors as Dossier[]) ?? []).map((n) => {
+  o.neighbors = ((o.neighbors as Dossier[]) ?? []).slice(0, 8).map((n) => {
     const out: Dossier = {};
     for (const [k, v] of Object.entries(n)) if (!NEAR_DROP.has(k)) out[k] = k === "structures" ? nonZero(v) : v;
     return out;
   });
-  o.reachableByBoat = ((o.reachableByBoat as Dossier[]) ?? []).slice(0, 4).map((n) => pick(n, FAR_FIELDS));
-  o.leaderboard = ((o.leaderboard as Dossier[]) ?? []).map((n) => pick(n, FAR_FIELDS));
-  delete o.build; // canBuild + buildCosts carry what the trained seat uses
+  o.reachableByBoat = ((o.reachableByBoat as Dossier[]) ?? []).slice(0, 3).map((n) => pick(n, FAR_FIELDS));
+  o.leaderboard = ((o.leaderboard as Dossier[]) ?? []).slice(0, 3).map((n) => pick(n, FAR_FIELDS));
+  o.myRecentActions = recent;
   return o;
 }

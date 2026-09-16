@@ -30,7 +30,7 @@ map-generator/map-generator.exe
 # MindFront arena output
 arena/records/
 arena/records/human/
-arena/local/data/
+arena/local/data*/
 arena/local/adapters/
 arena/local/.venv/
 arena/local/models/

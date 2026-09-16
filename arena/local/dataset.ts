@@ -7,7 +7,8 @@
 // played on (arena/local/sync-worktree.sh copies this file there), e.g.
 //   cd ~/mindfront-replay && npx tsx arena/local/dataset.ts ~/mindfront/arena/records/human --out ~/mindfront/arena/local/data
 //
-// Flags: --out DIR  --max-games N  --window 50  --keep 3 (top finishers per game)  --valid 0.05  --idle 1 (share of empty windows kept)
+// Flags: --out DIR  --max-games N  --window 50  --keep 2 (top finishers per game)  --valid 0.05
+//        --idle 0.3 (share of empty windows kept when the previous window was empty too; every first idle window after activity is kept)
 import { spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -26,7 +27,7 @@ import { decompressGameRecord, flattenedEmojiTable, simpleHash, toWireGameStartI
 import { NodeGameMapLoader } from "../../tests/perf/fullgame/NodeGameMapLoader";
 import { observe, trackHistory, UNIT_MAP } from "../observe";
 import { RATIO_MAX, RATIO_MIN, type BuildableUnit, type PlayerCtx } from "../types";
-import { compactObs, localSystemPrompt } from "./prompt";
+import { compactObs, localSystemPrompt, RECENT_SECONDS, type RecentAction } from "./prompt";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const arg = (name: string, dflt: string) => {
@@ -38,9 +39,9 @@ if (!recordsDir) throw new Error("usage: dataset.ts <recordsDir> --out <dir>");
 const outDir = arg("--out", "arena/local/data");
 const maxGames = Number(arg("--max-games", "1000000"));
 const WINDOW = Number(arg("--window", "50"));
-const KEEP = Number(arg("--keep", "3"));
+const KEEP = Number(arg("--keep", "2"));
 const VALID = Number(arg("--valid", "0.05"));
-const IDLE = Number(arg("--idle", "1"));
+const IDLE = Number(arg("--idle", "0.3"));
 const MAX_CALLS = 8;
 
 // The tool list the seat sees, taken from the arena's own MCP server so the
@@ -190,6 +191,7 @@ function ctxFor(p: Player): PlayerCtx {
   };
 }
 
+/** `obs` is already compacted (compactObs) so training renders exactly what the seat gets. */
 function example(obs: unknown, calls: ToolCall[]): Example {
   const assistant =
     calls.length === 0
@@ -202,7 +204,7 @@ function example(obs: unknown, calls: ToolCall[]): Example {
   return {
     messages: [
       { role: "system", content: localSystemPrompt() },
-      { role: "user", content: JSON.stringify({ ...compactObs(obs as Record<string, unknown>), plan: "", lastResult: "" }) },
+      { role: "user", content: JSON.stringify(obs) },
       assistant,
     ],
     tools: TOOLS,
@@ -260,6 +262,15 @@ async function replayRecord(file: string): Promise<{ examples: Example[]; synced
   const examples: Example[] = [];
   const open = new Map<string, { until: number; obs: unknown; calls: ToolCall[] }>();
   const lastIntent = new Map<string, number>();
+  // The human's own calls of the last RECENT_SECONDS, shown in every observation
+  // (a seat without them re-decides from scratch every round).
+  const recent = new Map<string, { tick: number; call: ToolCall }[]>();
+  const recentFor = (cid: string, tick: number): RecentAction[] => {
+    const list = (recent.get(cid) ?? []).filter((r) => tick - r.tick < RECENT_SECONDS * 10);
+    recent.set(cid, list);
+    return list.map((r) => ({ ago: (tick - r.tick) / 10, name: r.call.name, args: r.call.arguments }));
+  };
+  const view = (me: Player, tick: number) => compactObs(observe(game, me, ctxFor(me), [], []) as unknown as Record<string, unknown>, recentFor(me.clientID() ?? "", tick));
   let synced = true;
   for (const turn of record.turns) {
     const tick = game.ticks();
@@ -280,21 +291,26 @@ async function replayRecord(file: string): Promise<{ examples: Example[]; synced
         lastIntent.set(intent.clientID, tick);
         let w = open.get(intent.clientID);
         if (w === undefined) {
-          w = { until: tick + WINDOW, obs: observe(game, me, ctxFor(me), [], []), calls: [] };
+          w = { until: tick + WINDOW, obs: view(me, tick), calls: [] };
           open.set(intent.clientID, w);
         }
         const call = label(game, me, intent);
-        if (call !== null && w.calls.length < MAX_CALLS) w.calls.push(call);
+        if (call === null) continue;
+        if (w.calls.length < MAX_CALLS) w.calls.push(call);
+        recent.get(intent.clientID)?.push({ tick, call }) ?? recent.set(intent.clientID, [{ tick, call }]);
       }
-      // Windows in which the human did nothing, at their true rate (about half
-      // of all windows for a winner): v1 trained on 5% idle rounds and fired
-      // attacks and boats every second until it was dead at 1:02.
+      // Windows in which the human did nothing. The first idle window after
+      // activity is always kept (that is the "stop" signal); long pauses are
+      // sampled at IDLE so "Holding." does not dominate the loss (v2: 60 % of
+      // examples, and the seat learned the prior instead of the decision).
       if (tick % WINDOW === 0) {
         for (const cid of keep) {
-          if (open.has(cid) || lastIntent.get(cid) === tick || Math.random() > IDLE) continue;
+          if (open.has(cid)) continue;
+          const afterAction = (lastIntent.get(cid) ?? -1) >= tick - WINDOW;
+          if (!afterAction && Math.random() > IDLE) continue;
           const me = game.playerByClientID(cid);
           if (me === null || !me.isAlive()) continue;
-          examples.push(example(observe(game, me, ctxFor(me), [], []), []));
+          examples.push(example(view(me, tick), []));
         }
       }
     }

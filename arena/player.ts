@@ -10,7 +10,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { systemPrompt } from "./decide";
-import { LOCAL_MODEL_PREFIX, LOCAL_TOOLS, compactObs, localSystemPrompt, shortDescription, slimParameters } from "./local/prompt";
+import { LOCAL_MODEL_PREFIX, LOCAL_TOOLS, RECENT_SECONDS, type RecentAction, compactObs, localSystemPrompt, shortDescription, slimParameters } from "./local/prompt";
 import type { PlayerCtx } from "./types";
 
 /** models whose providers reject the `reasoning` parameter (learned at runtime) */
@@ -113,6 +113,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
     : { role: "system", content: [{ type: "text", text: baseSystemPrompt, cache_control: { type: "ephemeral" } }] };
 
   let lastResult = "";
+  // the local seat's own calls of the last RECENT_SECONDS, shown in its observation as in training
+  const recent: { at: number; name: string; args: Record<string, unknown> }[] = [];
 
   // Pre-match briefing: the manual is the system prompt; make the model process
   // it by writing its own plan before the spawn phase. The plan rides along in
@@ -187,10 +189,15 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
         await sleep(2000, signal);
         continue;
       }
-      if (shortPrompt && obsObj?.me !== undefined) obsObj = compactObs(obsObj);
-      obsObj.plan = plan;
-      // the trained seat saw plan: "" and lastResult: "" in every example
-      obsObj.lastResult = shortPrompt ? "" : lastResult;
+      if (shortPrompt && obsObj?.me !== undefined) {
+        const now = Date.now();
+        while (recent.length > 0 && now - recent[0].at >= RECENT_SECONDS * 1000) recent.shift();
+        const ago: RecentAction[] = recent.map((r) => ({ ago: Math.round((now - r.at) / 100) / 10, name: r.name, args: r.args }));
+        obsObj = compactObs(obsObj, ago);
+      } else {
+        obsObj.plan = plan;
+        obsObj.lastResult = lastResult;
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const messages: any[] = [
@@ -276,6 +283,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
             resultText = `error: ${String(err).slice(0, 200)}`;
           }
           resultsSummary.push(`${toolName}(${JSON.stringify(args)}) -> ${resultText.slice(0, 200)}`);
+          recent.push({ at: Date.now(), name: toolName, args });
           messages.push({ role: "tool", tool_call_id: tc.id, content: resultText });
         }
         // one assistant turn per observation, as in the training data
