@@ -201,7 +201,7 @@ function example(obs: unknown, calls: ToolCall[]): Example {
         };
   return {
     messages: [
-      { role: "system", content: localSystemPrompt("") },
+      { role: "system", content: localSystemPrompt() },
       { role: "user", content: JSON.stringify({ ...compactObs(obs as Record<string, unknown>), plan: "", lastResult: "" }) },
       assistant,
     ],

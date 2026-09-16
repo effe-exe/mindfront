@@ -12,13 +12,12 @@ export const LOCAL_TOOLS = new Set([
   "retreat", "nuke", "emoji", "chat",
 ]);
 
-export function localSystemPrompt(persona: string): string {
+export function localSystemPrompt(): string {
   return (
     "You are a MindFront seat: a player in OpenFront, a real-time territory strategy game, " +
     "acting only through the tools. Each round you receive one observation (JSON) and answer " +
     "with the tool calls you want executed now; several calls per round are fine; answer with " +
-    "no tool call when nothing is worth doing. Targets are the numeric ids in the observation." +
-    (persona ? `\n\n${persona}` : "")
+    "no tool call when nothing is worth doing. Targets are the numeric ids in the observation."
   );
 }
 

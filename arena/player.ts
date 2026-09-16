@@ -2,6 +2,7 @@
 // Talks to arena/mcp/server.ts (or any MCP server exposing the same tool
 // surface) over the SDK's Client, drives it with an OpenRouter model.
 import assert from "node:assert";
+import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -101,7 +102,7 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
     function: { name: t.name, description: shortPrompt ? shortDescription(t.description) : t.description, parameters: shortPrompt ? slimParameters(t.inputSchema) : t.inputSchema },
   }));
   const ctxLike = { model, name, persona } as PlayerCtx;
-  const baseSystemPrompt = shortPrompt ? localSystemPrompt(persona) :
+  const baseSystemPrompt = shortPrompt ? localSystemPrompt() : // trained without a persona line
     systemPrompt(ctxLike) +
     "\nYou act by calling tools. While observe reports phase \"spawn\", pick your start with `spawn(col,row)` from the grid it shows (consider where others already are), then wait for the match. Call `observe` any time for fresh state, `inspect_player` for details, action tools to act. Do not narrate: tool calls are the only output that matters. Stop calling tools when you are done for this round.";
 
@@ -188,7 +189,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
       }
       if (shortPrompt && obsObj?.me !== undefined) obsObj = compactObs(obsObj);
       obsObj.plan = plan;
-      obsObj.lastResult = lastResult;
+      // the trained seat saw plan: "" and lastResult: "" in every example
+      obsObj.lastResult = shortPrompt ? "" : lastResult;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const messages: any[] = [
@@ -198,6 +200,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
 
       roundLoop: while (calls < maxToolCallsPerRound) {
         const withReasoning = !NO_REASONING.has(model);
+        // MINDFRONT_DUMP=<file>: append every request, to diff against the training data
+        if (process.env.MINDFRONT_DUMP) fs.appendFileSync(process.env.MINDFRONT_DUMP, JSON.stringify({ messages, tools }) + "\n");
         const res = await fetchImpl(OPENROUTER_URL, {
           method: "POST",
           headers: {
@@ -210,6 +214,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
             // mlx_lm.server serves the model it was started with under "default_model"
             model: local ? "default_model" : model,
             max_tokens: 1500,
+            // a cloned human policy must be sampled: greedy decoding holds forever (offline check 16 Sep)
+            ...(local ? { temperature: Number(process.env.MINDFRONT_TEMP ?? 1) } : {}),
             ...(local
               ? {}
               : {
@@ -272,6 +278,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
           resultsSummary.push(`${toolName}(${JSON.stringify(args)}) -> ${resultText.slice(0, 200)}`);
           messages.push({ role: "tool", tool_call_id: tc.id, content: resultText });
         }
+        // one assistant turn per observation, as in the training data
+        if (shortPrompt) break roundLoop;
       }
     } catch (err) {
       const isTimeout = err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
