@@ -189,6 +189,13 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
         await sleep(2000, signal);
         continue;
       }
+      if (shortPrompt && obsObj?.phase === "spawn") {
+        // The trained seat never saw the spawn view (v3 picked an 18-tile corner and
+        // was boxed in); the brain places it at the end of the phase, far from
+        // everyone with room to grow.
+        await sleep(2000, signal);
+        continue;
+      }
       if (shortPrompt && obsObj?.me !== undefined) {
         const now = Date.now();
         while (recent.length > 0 && now - recent[0].at >= RECENT_SECONDS * 1000) recent.shift();
@@ -283,7 +290,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
             resultText = `error: ${String(err).slice(0, 200)}`;
           }
           resultsSummary.push(`${toolName}(${JSON.stringify(args)}) -> ${resultText.slice(0, 200)}`);
-          recent.push({ at: Date.now(), name: toolName, args });
+          // only executed calls, as in training (a refused attack in memory became a loop: v3 re-sent it 11 rounds running)
+          if (!/"ok":\s*false/.test(resultText)) recent.push({ at: Date.now(), name: toolName, args });
           messages.push({ role: "tool", tool_call_id: tc.id, content: resultText });
         }
         // one assistant turn per observation, as in the training data
