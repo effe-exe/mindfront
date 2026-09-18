@@ -229,7 +229,8 @@ export async function runPlayerWithClient(client: Client, opts: RunPlayerOpts): 
             model: local ? "default_model" : model,
             max_tokens: 1500,
             // a cloned human policy must be sampled: greedy decoding holds forever (offline check 16 Sep)
-            ...(local ? { temperature: Number(process.env.MINDFRONT_TEMP ?? 1) } : {}),
+            // top-p 0.9 cut the calls the arena refuses from 16 % to 8 % offline, calibration unchanged
+            ...(local ? { temperature: Number(process.env.MINDFRONT_TEMP ?? 1), top_p: Number(process.env.MINDFRONT_TOP_P ?? 0.9) } : {}),
             ...(local
               ? {}
               : {

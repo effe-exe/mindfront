@@ -1,0 +1,14 @@
+# Same adapters as lora-q3.yaml, learning rate 5x mlx-lm's 1e-5 default with warmup
+# and cosine decay: v3's act/hold accuracy went 24 -> 35 -> 55 / 60 over steps
+# 3k -> 5k -> 8k, i.e. it was still climbing steeply when the run ended.
+lora_parameters:
+  rank: 16
+  scale: 20.0
+  dropout: 0.0
+  keys: [self_attn.q_proj, self_attn.k_proj, self_attn.v_proj, self_attn.o_proj]
+learning_rate: 5.0e-5
+lr_schedule:
+  name: cosine_decay
+  warmup: 100
+  warmup_init: 1.0e-6
+  arguments: [5.0e-5, 4000, 5.0e-6]
